@@ -6,21 +6,21 @@ Prerequisite: [Optimized_dp](https://github.com/SFU-MARS/optimized_dp)
 
 Code Structure:
 
-    local_update_numpy
-    ├── direct_numpy
-    ├── decomposition_numpy
-    │    ├── update_V_numpy
-    │    └── subsystem 
-    ├── update_V_numpy
-    ├── system
-    └── set_2plot
+    local_update_numpy.py
+    ├── direct_numpy.py
+    ├── decomposition_numpy.py
+    │    ├── update_V_numpy.py
+    │    └── subsystem.py 
+    ├── update_V_numpy.py
+    ├── system.py
+    └── set_2plot.py
 
-    local_update_hcl
-    ├── direct_hcl
-    ├── decomposition_hcl
-    │    ├── update_V_hcl
-    │    └── subsystem 
-    ├── update_V_hcl
-    ├── system
-    └── set_2plot
+    local_update_hcl.py
+    ├── direct_hcl.py
+    ├── decomposition_hcl.py
+    │    ├── update_V_hcl.py
+    │    └── subsystem.py 
+    ├── update_V_hcl.py
+    ├── system.py
+    └── set_2plot.py
 
