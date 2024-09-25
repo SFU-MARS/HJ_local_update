@@ -5,7 +5,7 @@ import numpy as np
 import heterocl as hcl
 # import cv2
 
-from set_2plot import *
+# from set_2plot import *
 from odp.Plots import PlotOptions
 from odp.Plots import plot_isosurface, plot_valuefunction
 
@@ -125,7 +125,7 @@ print('Im here')
 '''
 Comparision with direct computation
 '''
-plot_overlay_set(grid, true_final, decomp_final, result_combine, po)
+# plot_overlay_set(grid, true_final, decomp_final, result_combine, po)
 
 print('The total number of points: ', true_final.shape[0]*true_final.shape[1])
 print('The number of points getting locally updated: ', indice.shape)
