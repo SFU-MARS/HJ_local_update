@@ -9,15 +9,17 @@ from update_V_numpy import spa_derivX, spa_derivY
 
 # Plot Options
 from odp.Plots import *
+
 # Solver Core
 from odp.solver import HJSolver
 
 import time
 
+
 def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
 
-# num = 101
-# saveAllTimeStep = True
+    # num = 101
+    # saveAllTimeStep = True
 
     # Create Grid
     grid_min = np.array([-4.0, -4.0])
@@ -34,11 +36,11 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-    sys = couple_u(x=[0,0], uMax=1, dMax=0.0, uMode='min', dMode='min')
+    sys = couple_u(x=[0, 0], uMax=1, dMax=0.0, uMode="min", dMode="min")
 
-    '''
+    """
     Direct updating loop
-    '''
+    """
     if saveAllTimeStep:
         data_list = []
         data_list.append(data)
@@ -58,28 +60,27 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
         print("Time step: ", t)
 
         # while tNow < tau[i]:
-            # Update the value function
+        # Update the value function
 
-            
         for x in range(len(list_x1)):
             for y in range(len(list_x2)):
 
                 # Get spatial derivative
                 dV_dx_L, dV_dx_R = spa_derivX(x, y, data, g)
                 dV_dy_L, dV_dy_R = spa_derivY(x, y, data, g)
-                
+
                 # Get the average gradient
-                dV_dx = (dV_dx_L + dV_dx_R)/2
-                dV_dy = (dV_dy_L + dV_dy_R)/2
-                
+                dV_dx = (dV_dx_L + dV_dx_R) / 2
+                dV_dy = (dV_dy_L + dV_dy_R) / 2
+
                 # Get the dynamical rates of change
                 uOpt = sys.opt_ctrl_numpy(t, [list_x1[x], list_x2[y]], [dV_dx, dV_dy])
                 dx_dt, dy_dt = sys.dynamics_numpy(t, [list_x1[x], list_x2[y]], uOpt, 0)
-                
+
                 # Updating the value function
-                data_change[x, y] = (dx_dt*dV_dx + dy_dt*dV_dy)
-                
-        data = data + data_change*t_step
+                data_change[x, y] = dx_dt * dV_dx + dy_dt * dV_dy
+
+        data = data + data_change * t_step
         if saveAllTimeStep:
             data_list.append(data)
         data_change = np.zeros(tuple(g.pts_each_dim))
@@ -88,16 +89,11 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
     execution_time = time.time() - start
 
     # print('The shape of data list is: ', data_list.shape)
-        
+
     print("Total kernel time direct: ", execution_time)
     print("Finished updating the value function")
-    
+
     if saveAllTimeStep:
         return g, data_list
 
     return g, data
-
-
-    
-    
-
