@@ -1,0 +1,9 @@
+running it for multiple timesteps?
+
+
+
+
+change delta and visualize the affected region
+
+also show the affected region across time steps
+
