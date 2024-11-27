@@ -1,8 +1,9 @@
-from direct_numpy import direct_comp   
+from direct_numpy import direct_comp
 from decomposition_numpy import decomposition
 
 import numpy as np
 import heterocl as hcl
+
 # import cv2
 import sys as py_sys
 
@@ -24,143 +25,212 @@ import time
 
 np.set_printoptions(threshold=py_sys.maxsize)
 
-num = 101
-lookback_length = 0.02
 
-grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
-result_decomp = decomposition(num, saveAllTimeStep=True, lookback_length=lookback_length)
-
-print('----------------------------------------')
-print('Direct computation result:')
-# print(grid.grid_points)
-# print(f"result_true: {result_true[-1]}")
-# print(f"result_true: {result_true[-1]}")
-print('----------------------------------------')
-print('Decomposition result:')
-print(f"result_decomp:")
-print(f"len(result_decomp)")
-# for i in range(0,2):
-#     print(f"result_decomp[{i}]: {result_decomp[i]}")
-print('----------------------------------------')
-
-print('The size of the decomposition result', result_decomp.shape)
-
-true_final = result_true[-1]
-decomp_final = result_decomp[-1]
-result_diff = decomp_final - true_final
-
-# fig = px.imshow(result_diff)
-# fig.show()
-
-indice = np.argwhere(abs(result_diff) > 1e-6)
-indice_transpose = indice.transpose()
-indices_ref = np.ravel_multi_index(indice_transpose, decomp_final.shape)
-
-# Set computational time steps
-t_step = 0.02
-small_number = 1e-5
-tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
-
-sys = couple_u(x=[0,0], uMax=1, dMax=0.0, uMode='min', dMode='min')
-
-# Initialize the value function
-data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
-
-# data = decomp_final.copy()
-# np.put(data, indices_ref, data_init[indice_transpose[0], indice_transpose[1]])
-
-data = data_init.copy()
-
-# Plotting Option
-po = PlotOptions(do_plot=True, plot_type="value", plotDims=[0,1],
-                colorscale="Bluered", save_fig=True, filename="local_update_3", interactive_html=True)
+class Config:
+    def __init__(
+        self,
+        lookback_length: float,
+        number_of_grid_points: int,
+        time_steps: float,
+        small_number: float,
+        sys: couple_u,
+    ) -> None:
+        self._lookback_length = lookback_length
+        self._number_of_grid_points = number_of_grid_points
+        self._time_steps = time_steps
+        self._small_number = small_number
+        self._tau = np.arange(
+            start=0, stop=lookback_length + small_number, step=time_steps
+        )
+        self._sys = sys
 
 
-'''
-Below is the local updating loop of the value function with respect to the indices
-pure numpy version
-'''
+def initConfig() -> Config:
+    return Config(
+        number_of_grid_points=101,
+        lookback_length=0.02,
+        time_steps=0.02,
+        small_number=1e-5,
+        sys=couple_u(
+            x=[0, 0],
+            uMax=1,
+            dMax=0.0,
+            uMode="min",
+            dMode="min",
+        ),
+    )
 
-list_x1 = np.reshape(grid.vs[0], grid.pts_each_dim[0])
-list_x2 = np.reshape(grid.vs[1], grid.pts_each_dim[1])
 
-data_change = np.zeros(tuple(grid.pts_each_dim))
+def plotArray(array, show=True):
+    fig = px.imshow(array)
+    if show:
+        fig.show()
 
-tNow = tau[0]
 
-start = time.time()
+def main():
+    # Initializtion
+    config = initConfig()
 
-for i in range(1, len(tau)):
-    t = np.array([tNow, tau[i]])
-    print("Time step: ", t)
+    # Perform direct computation and decomposition
+    grid, result_true = direct_comp(
+        config._number_of_grid_points,
+        saveAllTimeStep=True,
+        lookback_length=config._lookback_length,
+    )
+    result_decomp = decomposition(
+        config._number_of_grid_points,
+        saveAllTimeStep=True,
+        lookback_length=config._lookback_length,
+    )
+    # Initialize the value function
+    data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
 
-    # while tNow < tau[i]:
+    true_final = result_true[-1]
+    decomp_final = result_decomp[-1]
+    result_diff = decomp_final - true_final
+
+    plotArray(result_diff)
+    exit
+
+    indice = np.argwhere(abs(result_diff) > 1e-6)
+    indice_transpose = indice.transpose()
+    indices_ref = np.ravel_multi_index(indice_transpose, decomp_final.shape)
+
+    # # Set computational time steps
+    # t_step = 0.02
+    # small_number = 1e-5
+    # tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
+
+    # sys = couple_u(x=[0, 0], uMax=1, dMax=0.0, uMode="min", dMode="min")
+
+    # Initialize the value function
+    data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
+
+    # data = decomp_final.copy()
+    # np.put(data, indices_ref, data_init[indice_transpose[0], indice_transpose[1]])
+
+    data = data_init.copy()
+
+    # Plotting Option
+    po = PlotOptions(
+        do_plot=True,
+        plot_type="value",
+        plotDims=[0, 1],
+        colorscale="Bluered",
+        save_fig=True,
+        filename="local_update_3",
+        interactive_html=True,
+    )
+
+    """
+    Below is the local updating loop of the value function with respect to the indices
+    pure numpy version
+    """
+
+    list_x1 = np.reshape(grid.vs[0], grid.pts_each_dim[0])
+    list_x2 = np.reshape(grid.vs[1], grid.pts_each_dim[1])
+
+    data_change = np.zeros(tuple(grid.pts_each_dim))
+
+    tNow = tau[0]
+
+    start = time.time()
+
+    for i in range(1, len(tau)):
+        t = np.array([tNow, tau[i]])
+        print("Time step: ", t)
+
+        # while tNow < tau[i]:
         # Update the value function
 
-        
-    for ind in range(len(indice)):
-        # print(indices[i])
-        # get indices
-        x = indice[ind][0]
-        y = indice[ind][1]
-        # get spatial derivative
-        dV_dx_L, dV_dx_R = spa_derivX(x,y,data,grid)
-        dV_dy_L, dV_dy_R = spa_derivY(x,y,data,grid)
-        # Get the average gradient
-        dV_dx = (dV_dx_L + dV_dx_R)/2
-        dV_dy = (dV_dy_L + dV_dy_R)/2
-        # get the dynamical rates of change
-        uOpt = sys.opt_ctrl_numpy(t, [list_x1[x], list_x2[y]], [dV_dx, dV_dy])
-        dx_dt, dy_dt = sys.dynamics_numpy(t, [list_x1[x], list_x2[y]], uOpt, 0)
-        # Updating the value function
-        data_change[x,y] = (dx_dt*dV_dx + dy_dt*dV_dy)
-    
-    data = data + data_change*t_step    
-    tNow += t_step
-    data_change = np.zeros(tuple(grid.pts_each_dim))
-    
-    data_ref = result_decomp[i].copy()
-    np.put(data_ref, indices_ref, data[indice_transpose[0], indice_transpose[1]])
-    
-    data = data_ref.copy()
+        for ind in range(len(indice)):
+            # print(indices[i])
+            # get indices
+            x = indice[ind][0]
+            y = indice[ind][1]
+            # get spatial derivative
+            dV_dx_L, dV_dx_R = spa_derivX(x, y, data, grid)
+            dV_dy_L, dV_dy_R = spa_derivY(x, y, data, grid)
+            # Get the average gradient
+            dV_dx = (dV_dx_L + dV_dx_R) / 2
+            dV_dy = (dV_dy_L + dV_dy_R) / 2
+            # get the dynamical rates of change
+            uOpt = sys.opt_ctrl_numpy(t, [list_x1[x], list_x2[y]], [dV_dx, dV_dy])
+            dx_dt, dy_dt = sys.dynamics_numpy(t, [list_x1[x], list_x2[y]], uOpt, 0)
+            # Updating the value function
+            data_change[x, y] = dx_dt * dV_dx + dy_dt * dV_dy
 
-    execution_time = time.time() - start
-print("Total kernel time local: ", execution_time)
-print("Finished updating the value function")
+        data = data + data_change * t_step
+        tNow += t_step
+        data_change = np.zeros(tuple(grid.pts_each_dim))
+
+        data_ref = result_decomp[i].copy()
+        np.put(data_ref, indices_ref, data[indice_transpose[0], indice_transpose[1]])
+
+        data = data_ref.copy()
+
+        execution_time = time.time() - start
+    print("Total kernel time local: ", execution_time)
+    print("Finished updating the value function")
+
+    """
+    Combination process: local updating result, and decomposition result
+    """
+    result_combine = decomp_final.copy()
+
+    np.put(result_combine, indices_ref, data[indice_transpose[0], indice_transpose[1]])
+    print("Im here")
+
+    """
+    Comparision with direct computation
+    """
+    # plot_overlay_set(grid, true_final, decomp_final, result_combine, po)
+
+    print("The total number of points: ", true_final.shape[0] * true_final.shape[1])
+    print("The number of points getting locally updated: ", indice.shape)
+    print(
+        "Original number of points with different values: ",
+        np.argwhere(abs(decomp_final - true_final) > 1e-6).shape,
+    )
+    print(
+        "The number of points with different values after local updating: ",
+        np.argwhere(abs(result_combine - true_final) > 1e-6).shape,
+    )
+
+    count = true_final.shape[0] * true_final.shape[1]
+
+    diff_decomp = np.sum(result_diff) / count
+    diff_corrected = np.sum(result_combine - true_final) / count
+    print(
+        "The average error between direct computation and decomposition: ", diff_decomp
+    )
+    print(
+        "The average error between direct computation and local updates: ",
+        diff_corrected,
+    )
+
+    diff_decomp = np.sum(abs(result_diff)) / count
+    diff_corrected = np.sum(abs(result_combine - true_final)) / count
+    print(
+        "The average absolute error between direct computation and decomposition: ",
+        diff_decomp,
+    )
+    print(
+        "The average absolute error between direct computation and local updates: ",
+        diff_corrected,
+    )
+
+    diff_decomp_max = np.max(abs(result_diff))
+    diff_corrected_max = np.max(abs(result_combine - true_final))
+    print(
+        "The maximum absolute error between direct computation and decomposition: ",
+        diff_decomp_max,
+    )
+    print(
+        "The maximum absolute error between direct computation and local updates: ",
+        diff_corrected_max,
+    )
 
 
-'''
-Combination process: local updating result, and decomposition result
-'''
-result_combine = decomp_final.copy()
-
-np.put(result_combine, indices_ref, data[indice_transpose[0], indice_transpose[1]])
-print('Im here')
-
-
-'''
-Comparision with direct computation
-'''
-# plot_overlay_set(grid, true_final, decomp_final, result_combine, po)
-
-print('The total number of points: ', true_final.shape[0]*true_final.shape[1])
-print('The number of points getting locally updated: ', indice.shape)
-print('Original number of points with different values: ', np.argwhere(abs(decomp_final-true_final)>1e-6).shape)
-print('The number of points with different values after local updating: ', np.argwhere(abs(result_combine-true_final)>1e-6).shape)
-
-count = true_final.shape[0]*true_final.shape[1]
-
-diff_decomp = np.sum(result_diff) / count
-diff_corrected = np.sum(result_combine - true_final) / count
-print('The average error between direct computation and decomposition: ', diff_decomp)
-print('The average error between direct computation and local updates: ', diff_corrected)
-
-diff_decomp = np.sum(abs(result_diff)) / count
-diff_corrected = np.sum(abs(result_combine - true_final)) / count
-print('The average absolute error between direct computation and decomposition: ', diff_decomp)
-print('The average absolute error between direct computation and local updates: ', diff_corrected)
-
-diff_decomp_max = np.max(abs(result_diff))
-diff_corrected_max = np.max(abs(result_combine - true_final))
-print('The maximum absolute error between direct computation and decomposition: ', diff_decomp_max)
-print('The maximum absolute error between direct computation and local updates: ', diff_corrected_max)
+if __name__ == "__main__":
+    main()
