@@ -1,4 +1,4 @@
-from direct_numpy import direct_comp
+from direct_numpy import direct_comp, direct_computation
 from decomposition_numpy import decomposition
 
 import numpy as np
@@ -15,7 +15,7 @@ import plotly.express as px
 
 from odp.Grid import Grid
 from odp.Shapes import *
-
+from config import Config
 from system import couple_u
 
 # The function of computing first order spatial derivative
@@ -24,26 +24,6 @@ from update_V_numpy import spa_derivX, spa_derivY
 import time
 
 np.set_printoptions(threshold=py_sys.maxsize)
-
-
-class Config:
-    def __init__(
-        self,
-        lookback_length: float,
-        number_of_grid_points: int,
-        time_steps: float,
-        small_number: float,
-        sys: couple_u,
-    ) -> None:
-        self._lookback_length = lookback_length
-        self._number_of_grid_points = number_of_grid_points
-        self._time_steps = time_steps
-        self._small_number = small_number
-        self._tau = np.arange(
-            start=0, stop=lookback_length + small_number, step=time_steps
-        )
-        self._sys = sys
-
 
 def initConfig() -> Config:
     return Config(
@@ -72,15 +52,15 @@ def main():
     config = initConfig()
 
     # Perform direct computation and decomposition
-    grid, result_true = direct_comp(
-        config._number_of_grid_points,
+    grid, result_true = direct_computation(
+        config=config,
         saveAllTimeStep=True,
-        lookback_length=config._lookback_length,
+        # lookback_length=config._lookback_length,
     )
     result_decomp = decomposition(
         config._number_of_grid_points,
         saveAllTimeStep=True,
-        lookback_length=config._lookback_length,
+        # lookback_length=config._lookback_length,
     )
     # Initialize the value function
     data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])

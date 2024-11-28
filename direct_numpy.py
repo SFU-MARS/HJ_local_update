@@ -14,6 +14,7 @@ from odp.Plots import *
 from odp.solver import HJSolver
 
 import time
+from config import Config, constructGrid
 
 
 def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
@@ -53,6 +54,79 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
 
     tNow = tau[0]
 
+    start = time.time()
+
+    for i in range(1, len(tau)):
+        t = np.array([tNow, tau[i]])
+        print("Time step: ", t)
+
+        # while tNow < tau[i]:
+        # Update the value function
+
+        for x in range(len(list_x1)):
+            for y in range(len(list_x2)):
+
+                # Get spatial derivative
+                dV_dx_L, dV_dx_R = spa_derivX(x, y, data, g)
+                dV_dy_L, dV_dy_R = spa_derivY(x, y, data, g)
+
+                # Get the average gradient
+                dV_dx = (dV_dx_L + dV_dx_R) / 2
+                dV_dy = (dV_dy_L + dV_dy_R) / 2
+
+                # Get the dynamical rates of change
+                uOpt = sys.opt_ctrl_numpy(t, [list_x1[x], list_x2[y]], [dV_dx, dV_dy])
+                dx_dt, dy_dt = sys.dynamics_numpy(t, [list_x1[x], list_x2[y]], uOpt, 0)
+
+                # Updating the value function
+                data_change[x, y] = dx_dt * dV_dx + dy_dt * dV_dy
+
+        data = data + data_change * t_step
+        if saveAllTimeStep:
+            data_list.append(data)
+        data_change = np.zeros(tuple(g.pts_each_dim))
+        tNow += t_step
+        # print('The shape of data list is: ', len(data_list))
+    execution_time = time.time() - start
+
+    # print('The shape of data list is: ', data_list.shape)
+
+    print("Total kernel time direct: ", execution_time)
+    print("Finished updating the value function")
+
+    if saveAllTimeStep:
+        return g, data_list
+
+    return g, data
+
+
+def direct_computation(config: Config, saveAllTimeStep):
+
+    ## Get initial values from config
+    num = config._number_of_grid_points
+    t_step = config._time_steps
+    small_number = config._small_number
+    tau = config._tau
+    sys = config._sys
+
+    # create grid
+    g = constructGrid(number_of_grid_points=num)
+
+    # initialize value function
+    data = ShapeRectangle(g, [-1.0, -1.0], [1.0, 1.0])
+
+    """
+    Direct updating loop
+    """
+    if saveAllTimeStep:
+        data_list = []
+        data_list.append(data)
+
+    list_x1 = np.reshape(g.vs[0], g.pts_each_dim[0])
+    list_x2 = np.reshape(g.vs[1], g.pts_each_dim[1])
+
+    data_change = np.zeros(tuple(g.pts_each_dim))
+    tNow = tau[0]
     start = time.time()
 
     for i in range(1, len(tau)):
