@@ -29,8 +29,8 @@ def decomposition_old(num, saveAllTimeStep=True, lookback_length=0.02):
     # Initialize value function
     data_sub = ShapeRectangle(g, [-1.0], [1.0])
 
-    print(f"grid: {g.vs}")
-    print(f"data_sub: {data_sub}")
+    # print(f"grid: {g.vs}")
+    # print(f"data_sub: {data_sub}")
 
     ## Look-back length and time step of computation
     # lookback_length = 0.02
@@ -145,7 +145,6 @@ def decomposition(config: Config, saveAllTimeStep=True):
     data_sub = config.value_function_1d(grid=g)
     # Set 1D system dynamics
     sys = config._subsys_1d
-
     t_step = config._time_steps
     small_number = config._small_number
     tau = config._tau
@@ -154,12 +153,10 @@ def decomposition(config: Config, saveAllTimeStep=True):
     list_x = np.reshape(g.vs[0], g.pts_each_dim[0])
     data_change = np.zeros(tuple(g.pts_each_dim))
 
-    print(f"grid: {g.vs}")
-    print(f"data_sub: {data_sub}")
-    print(f"list_x: {list_x}")
-    print(f"data_change: {data_change}")
-
-    exit(1)
+    # print(f"grid: {g.vs}")
+    # print(f"data_sub: {data_sub}")
+    # print(f"list_x: {list_x}")
+    # print(f"data_change: {data_change}")
 
     # Set computation task and compute HJ PDE
     """
@@ -206,41 +203,46 @@ def decomposition(config: Config, saveAllTimeStep=True):
     Combine the results from 2 subsystems
     """
 
-    grid_min = np.array([-4.0, -4.0])
-    grid_max = np.array([4.0, 4.0])
-    dims = grid_min.shape[0]
-    N = np.array([num, num])
-    g = Grid(grid_min, grid_max, dims, N)
-
     if not saveAllTimeStep:
-        result_upper_flip = np.flip(data_sub, axis=0)
-        result_upper_expand = np.tile(result_upper_flip, (num, 1))
-        print(result_upper_expand.shape)
-        result_upper = np.transpose(result_upper_expand, (1, 0))
-
-        result_lower_flip = np.flip(data_sub, axis=0)
-        result_lower_expand = np.tile(result_lower_flip, (num, 1))
-        print(result_lower_expand.shape)
-        result_lower = np.transpose(result_lower_expand, (0, 1))
-
-        result_full = np.maximum(result_upper, result_lower)
-
+        result_full = combine_subsystem_results(result_upper=data_sub,
+                                                result_lower=data_sub,
+                                                number_of_grid_points=config._number_of_grid_points)
     else:
+        result_full = combine_subsystem_results_all_time_steps(result_upper_list=data_list,
+                                                result_lower_list=data_list,
+                                                number_of_grid_points=config._number_of_grid_points)
+        pass
+    
+    return result_full
 
-        result_upper_flip = np.flip(data_list, axis=0)
-        result_upper_expand = np.tile(data_list, (num, 1, 1))
-        # print(result_upper_expand.shape)
-        result_upper = np.transpose(result_upper_expand, (1, 2, 0))
-        # print(result_upper.shape)
 
-        result_lower_flip = np.flip(data_list, axis=0)
-        result_lower_expand = np.tile(data_list, (num, 1, 1))
-        # print(result_lower_expand.shape)
-        result_lower = np.transpose(result_lower_expand, (1, 0, 2))
-        # print(result_lower.shape)
+def combine_subsystem_results(result_upper, result_lower, number_of_grid_points):
+    result_upper_flip = np.flip(result_upper, axis=0)
+    result_upper_expand = np.tile(result_upper_flip, (number_of_grid_points, 1))
+    print(result_upper_expand.shape)
+    result_upper = np.transpose(result_upper_expand, (1, 0))
 
-        result_full = np.maximum(result_upper, result_lower)
+    result_lower_flip = np.flip(result_lower, axis=0)
+    result_lower_expand = np.tile(result_lower_flip, (number_of_grid_points, 1))
+    print(result_lower_expand.shape)
+    result_lower = np.transpose(result_lower_expand, (0, 1))
 
-        # print('Decomposition Correct')
+    result_full = np.maximum(result_upper, result_lower)
+    return result_full
 
+
+def combine_subsystem_results_all_time_steps(result_upper_list, result_lower_list, number_of_grid_points):
+
+    result_upper_flip = np.flip(result_upper_list, axis=0)
+    result_upper_expand = np.tile(result_upper_list, (number_of_grid_points, 1, 1))
+    # print(result_upper_expand.shape)
+    result_upper = np.transpose(result_upper_expand, (1, 2, 0))
+    # print(result_upper.shape)
+
+    result_lower_flip = np.flip(result_lower_list, axis=0)
+    result_lower_expand = np.tile(result_lower_list, (number_of_grid_points, 1, 1))
+    # print(result_lower_expand.shape)
+    result_lower = np.transpose(result_lower_expand, (1, 0, 2))
+    # print(result_lower.shape)
+    result_full = np.maximum(result_upper, result_lower)
     return result_full

@@ -30,7 +30,7 @@ np.set_printoptions(threshold=py_sys.maxsize)
 def initConfig() -> Config:
     return Config(
         # number_of_grid_points=101,
-        number_of_grid_points=5,
+        number_of_grid_points=101,
         lookback_length=0.02,
         time_steps=0.02,
         small_number=1e-5,
@@ -57,55 +57,21 @@ def plotArray(array, show=True):
         fig.show()
 
 
-def main():
-    # Initializtion
-    config = initConfig()
+def correctionBasedOnDirectComputation(true_final_grid, true_final, result_decomp, config: Config):
 
-    # Perform direct computation and decomposition
-    grid, result_true = direct_computation(
-        config=config,
-        saveAllTimeStep=True,
-        # lookback_length=config._lookback_length,
-    )
-    # direct_comp_old(
-    #     num=config._number_of_grid_points,
-    #     saveAllTimeStep=True,
-    #     lookback_length=config._lookback_length,
-    # )
-    result_decomp_old = decomposition_old(
-        config._number_of_grid_points,
-        saveAllTimeStep=True,
-        lookback_length=config._lookback_length,
-    )
-    result_decomp = decomposition(
-        config=config,
-        saveAllTimeStep=True,
-    )
-    # Initialize the value function
-    # data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
-    data_init = config.value_function_2d(grid=grid)
-
-    true_final = result_true[-1]
     decomp_final = result_decomp[-1]
     result_diff = decomp_final - true_final
-
-    plotArray(result_diff)
-    exit
 
     indice = np.argwhere(abs(result_diff) > 1e-6)
     indice_transpose = indice.transpose()
     indices_ref = np.ravel_multi_index(indice_transpose, decomp_final.shape)
 
-    # # Set computational time steps
-    # t_step = 0.02
-    # small_number = 1e-5
-    # tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
-
-    # sys = couple_u(x=[0, 0], uMax=1, dMax=0.0, uMode="min", dMode="min")
-
-
-    # data = decomp_final.copy()
-    # np.put(data, indices_ref, data_init[indice_transpose[0], indice_transpose[1]])
+    # Initialize from config
+    grid = true_final_grid
+    data_init = config.value_function_2d(grid=true_final_grid)
+    t_step = config._time_steps
+    tau = config._tau
+    sys = config._sys_2d
 
     data = data_init.copy()
 
@@ -227,6 +193,51 @@ def main():
     print(
         "The maximum absolute error between direct computation and local updates: ",
         diff_corrected_max,
+    )
+
+
+def main():
+    # Initializtion
+    config = initConfig()
+
+    # Perform direct computation and decomposition
+    grid, result_true = direct_computation(
+        config=config,
+        saveAllTimeStep=True,
+        # lookback_length=config._lookback_length,
+    )
+    # direct_comp_old(
+    #     num=config._number_of_grid_points,
+    #     saveAllTimeStep=True,
+    #     lookback_length=config._lookback_length,
+    # )
+    result_decomp_old = decomposition_old(
+        config._number_of_grid_points,
+        saveAllTimeStep=True,
+        lookback_length=config._lookback_length,
+    )
+    result_decomp = decomposition(
+        config=config,
+        saveAllTimeStep=True,
+    )
+    # Initialize the value function
+    # data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
+    data_init = config.value_function_2d(grid=grid)
+
+    true_final = result_true[-1]
+    decomp_final = result_decomp[-1]
+    decomp_final_old = result_decomp_old[-1]
+    result_diff = decomp_final - true_final
+
+    for x, y in result_decomp_old, result_decomp:
+        result_diff2 = decomp_final - decomp_final_old
+        # plotArray(result_diff2)
+
+    correctionBasedOnDirectComputation(
+        true_final_grid=grid,
+        true_final=true_final,
+        result_decomp=result_decomp,
+        config=config,
     )
 
 

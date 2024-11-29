@@ -1,5 +1,5 @@
 from direct_numpy import direct_computation_old
-from decomposition_numpy import decomposition
+from decomposition_numpy import decomposition_old
 
 import numpy as np
 import heterocl as hcl
@@ -28,7 +28,7 @@ lookback_length = 0.02
 grid, result_true = direct_computation_old(
     num, saveAllTimeStep=True, lookback_length=lookback_length
 )
-result_decomp = decomposition(
+result_decomp = decomposition_old(
     num, saveAllTimeStep=True, lookback_length=lookback_length
 )
 
