@@ -7,3 +7,10 @@ change delta and visualize the affected region
 
 also show the affected region across time steps
 
+
+
+Code cleanup:
+- send init config to direct computation
+- send init config to local update computation
+
+

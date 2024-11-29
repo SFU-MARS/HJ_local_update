@@ -1,4 +1,4 @@
-from direct_numpy import direct_comp
+from direct_numpy import direct_computation_old
 from decomposition_numpy import decomposition
 
 import numpy as np
@@ -25,7 +25,7 @@ import time
 num = 101
 lookback_length = 0.02
 
-grid, result_true = direct_comp(
+grid, result_true = direct_computation_old(
     num, saveAllTimeStep=True, lookback_length=lookback_length
 )
 result_decomp = decomposition(

@@ -14,10 +14,12 @@ from odp.Plots import *
 from odp.solver import HJSolver
 
 import time
-from config import Config, constructGrid
+from config import Config, construct2DGrid
 
 
-def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
+def direct_computation_old(num, saveAllTimeStep=True, lookback_length=0.02):
+    print("direct_computation_old")
+    print("================================================")
 
     # num = 101
     # saveAllTimeStep = True
@@ -31,6 +33,8 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
 
     ## Initialize value function
     data = ShapeRectangle(g, [-1.0, -1.0], [1.0, 1.0])
+    # print(f"grid: {g.vs}")
+    # print(f"data_sub: {data}")
 
     # lookback_length = 0.02
     t_step = 0.02
@@ -101,19 +105,24 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
 
 
 def direct_computation(config: Config, saveAllTimeStep):
+    print("direct_computation")
+    print("================================================")
 
     ## Get initial values from config
     num = config._number_of_grid_points
     t_step = config._time_steps
     small_number = config._small_number
     tau = config._tau
-    sys = config._sys
+    sys = config._sys_2d
 
     # create grid
-    g = constructGrid(number_of_grid_points=num)
+    g = construct2DGrid(number_of_grid_points=num)
 
     # initialize value function
-    data = ShapeRectangle(g, [-1.0, -1.0], [1.0, 1.0])
+    # data = ShapeRectangle(g, [-1.0, -1.0], [1.0, 1.0])
+    data = config.value_function_2d(grid=g)
+    print(f"grid: {g.vs}")
+    print(f"data_sub: {data}")
 
     """
     Direct updating loop

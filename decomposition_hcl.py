@@ -56,7 +56,7 @@ def decomposition(num):
         po,
         saveAllTimeSteps=True,
         untilConvergent=False,
-        accuracy="low",
+        # accuracy="low",
     )
 
     # combined result and grid

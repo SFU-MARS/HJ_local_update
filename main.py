@@ -1,5 +1,5 @@
-from direct_numpy import direct_comp, direct_computation
-from decomposition_numpy import decomposition
+from direct_numpy import direct_computation_old, direct_computation
+from decomposition_numpy import decomposition, decomposition_old
 
 import numpy as np
 import heterocl as hcl
@@ -17,6 +17,7 @@ from odp.Grid import Grid
 from odp.Shapes import *
 from config import Config
 from system import couple_u
+from subsystem import subsys
 
 # The function of computing first order spatial derivative
 from update_V_numpy import spa_derivX, spa_derivY
@@ -25,14 +26,23 @@ import time
 
 np.set_printoptions(threshold=py_sys.maxsize)
 
+
 def initConfig() -> Config:
     return Config(
-        number_of_grid_points=101,
+        # number_of_grid_points=101,
+        number_of_grid_points=5,
         lookback_length=0.02,
         time_steps=0.02,
         small_number=1e-5,
-        sys=couple_u(
+        sys_2d=couple_u(
             x=[0, 0],
+            uMax=1,
+            dMax=0.0,
+            uMode="min",
+            dMode="min",
+        ),
+        subsys_1d=subsys(
+            x=[0],
             uMax=1,
             dMax=0.0,
             uMode="min",
@@ -57,13 +67,23 @@ def main():
         saveAllTimeStep=True,
         # lookback_length=config._lookback_length,
     )
-    result_decomp = decomposition(
+    # direct_comp_old(
+    #     num=config._number_of_grid_points,
+    #     saveAllTimeStep=True,
+    #     lookback_length=config._lookback_length,
+    # )
+    result_decomp_old = decomposition_old(
         config._number_of_grid_points,
         saveAllTimeStep=True,
-        # lookback_length=config._lookback_length,
+        lookback_length=config._lookback_length,
+    )
+    result_decomp = decomposition(
+        config=config,
+        saveAllTimeStep=True,
     )
     # Initialize the value function
-    data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
+    # data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
+    data_init = config.value_function_2d(grid=grid)
 
     true_final = result_true[-1]
     decomp_final = result_decomp[-1]
@@ -83,8 +103,6 @@ def main():
 
     # sys = couple_u(x=[0, 0], uMax=1, dMax=0.0, uMode="min", dMode="min")
 
-    # Initialize the value function
-    data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
 
     # data = decomp_final.copy()
     # np.put(data, indices_ref, data_init[indice_transpose[0], indice_transpose[1]])
