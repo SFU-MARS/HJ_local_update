@@ -121,8 +121,8 @@ def direct_computation(config: Config, saveAllTimeStep):
     # initialize value function
     # data = ShapeRectangle(g, [-1.0, -1.0], [1.0, 1.0])
     data = config.value_function_2d(grid=g)
-    # print(f"grid: {g.vs}")
-    # print(f"data_sub: {data}")
+    print(f"grid: {g.vs}")
+    print(f"data_sub: {data}")
 
     """
     Direct updating loop
@@ -175,6 +175,9 @@ def direct_computation(config: Config, saveAllTimeStep):
 
     print("Total kernel time direct: ", execution_time)
     print("Finished updating the value function")
+
+    print(f"grid: {g.vs}")
+    print(f"data_sub: {data}")
 
     if saveAllTimeStep:
         return g, data_list

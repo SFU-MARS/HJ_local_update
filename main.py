@@ -15,7 +15,7 @@ import plotly.express as px
 
 from odp.Grid import Grid
 from odp.Shapes import *
-from config import Config
+from config import Config, construct2DGrid
 from system import couple_u
 from subsystem import subsys
 
@@ -30,7 +30,7 @@ np.set_printoptions(threshold=py_sys.maxsize)
 def initConfig() -> Config:
     return Config(
         # number_of_grid_points=101,
-        number_of_grid_points=101,
+        number_of_grid_points=11,
         lookback_length=0.02,
         time_steps=0.02,
         small_number=1e-5,
@@ -57,7 +57,7 @@ def plotArray(array, show=True):
         fig.show()
 
 
-def correctionBasedOnDirectComputation(true_final_grid, true_final, result_decomp, config: Config):
+def correctionBasedOnDirectComputation(true_final, result_decomp, config: Config):
 
     decomp_final = result_decomp[-1]
     result_diff = decomp_final - true_final
@@ -67,7 +67,7 @@ def correctionBasedOnDirectComputation(true_final_grid, true_final, result_decom
     indices_ref = np.ravel_multi_index(indice_transpose, decomp_final.shape)
 
     # Initialize from config
-    grid = true_final_grid
+    grid = construct2DGrid(number_of_grid_points=config._number_of_grid_points)
     data_init = config.value_function_2d(grid=true_final_grid)
     t_step = config._time_steps
     tau = config._tau
@@ -234,7 +234,6 @@ def main():
         # plotArray(result_diff2)
 
     correctionBasedOnDirectComputation(
-        true_final_grid=grid,
         true_final=true_final,
         result_decomp=result_decomp,
         config=config,
