@@ -104,7 +104,7 @@ def direct_computation_old(num, saveAllTimeStep=True, lookback_length=0.02):
     return g, data
 
 
-def direct_computation(config: Config, saveAllTimeStep):
+def direct_computation(config: Config, saveAllTimeStep, debug=False):
     print("direct_computation")
     print("================================================")
 
@@ -120,16 +120,17 @@ def direct_computation(config: Config, saveAllTimeStep):
 
     # initialize value function
     # data = ShapeRectangle(g, [-1.0, -1.0], [1.0, 1.0])
-    print("grid:")
-    print(g.vs)
     data = config.value_function_2d(grid=g)
-    print("data_sub:")
-    print(data)
+    if debug:
+        print("grid:")
+        print(g.vs)
+        print("data_sub:")
+        print(data)
+        print(f"saveAllTimeStep: {saveAllTimeStep}")
 
     """
     Direct updating loop
     """
-    print(f"saveAllTimeStep: {saveAllTimeStep}")
 
     if saveAllTimeStep:
         data_list = []
@@ -179,12 +180,13 @@ def direct_computation(config: Config, saveAllTimeStep):
 
     # print('The shape of data list is: ', data_list.shape)
 
-    print("Total kernel time direct: ", execution_time)
-    print("Finished updating the value function")
+    print(f"Number of timesteps: {len(data_list)}")
+    print(f"Total kernel time: {execution_time:.4f} seconds")
 
-    print(f"grid: {g.vs}")
-    print(f"data_sub: {data}")
-    print(f"len(data_list): {len(data_list)}")
+    if debug:
+        print(f"grid: {g.vs}")
+        print(f"data_sub: {data}")
+        print(f"len(data_list): {len(data_list)}")
 
     if saveAllTimeStep:
         return g, data_list

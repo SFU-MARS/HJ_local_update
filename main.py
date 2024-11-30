@@ -31,7 +31,7 @@ np.set_printoptions(precision=4)
 def initConfig() -> Config:
     return Config(
         # number_of_grid_points=101,
-        number_of_grid_points=5,
+        number_of_grid_points=11,
         lookback_length=0.2,
         time_steps=0.02,
         small_number=1e-5,
@@ -58,17 +58,20 @@ def plotArray(array, show=True):
         fig.show()
 
 
-def correctionBasedOnDirectComputation(true_final, result_decomp, config: Config):
+def correctionBasedOnDirectComputation(
+    true_final, result_decomp, config: Config, debug=False
+):
 
     print("correctionBasedOnDirectComputation")
     print("================================================")
     decomp_final = result_decomp[-1]
     result_diff = decomp_final - true_final
 
-    print("true_final:")
-    print(true_final)
-    print("decomp_final:")
-    print(decomp_final)
+    if debug:
+        print("true_final:")
+        print(true_final)
+        print("decomp_final:")
+        print(decomp_final)
 
     indice = np.argwhere(abs(result_diff) > 1e-6)
     indice_transpose = indice.transpose()
@@ -105,12 +108,15 @@ def correctionBasedOnDirectComputation(true_final, result_decomp, config: Config
     data_change = np.zeros(tuple(grid.pts_each_dim))
 
     tNow = tau[0]
+    print("Correcting decomposition results...")
 
     start = time.time()
+    count = 0
 
     for i in range(1, len(tau)):
         t = np.array([tNow, tau[i]])
-        print("Time step: ", t)
+        print(f"Time step: {count}, {t}")
+        count += 1
 
         # while tNow < tau[i]:
         # Update the value function
@@ -142,8 +148,7 @@ def correctionBasedOnDirectComputation(true_final, result_decomp, config: Config
         data = data_ref.copy()
 
         execution_time = time.time() - start
-    print("Total kernel time local: ", execution_time)
-    print("Finished updating the value function")
+    print(f"Total kernel time: {execution_time:.4f} seconds")
 
     """
     Combination process: local updating result, and decomposition result
@@ -151,60 +156,66 @@ def correctionBasedOnDirectComputation(true_final, result_decomp, config: Config
     result_combine = decomp_final.copy()
 
     np.put(result_combine, indices_ref, data[indice_transpose[0], indice_transpose[1]])
-    print("Corrected result:")
-    print(result_combine)
-    print("Im here")
+    if debug:
+        print("Corrected result:")
+        print(result_combine)
+        compareArrays(result_combine, true_final)
 
-    compareArrays(result_combine, true_final)
+    process_stats(
+        true_final=true_final,
+        decomp_final=decomp_final,
+        corrected_result=result_combine,
+        number_of_points_updated=indice.shape,
+    )
+
+
+def process_stats(true_final, decomp_final, corrected_result, number_of_points_updated):
+    print("Processing stats")
+    print("================================================")
 
     """
     Comparision with direct computation
     """
     # plot_overlay_set(grid, true_final, decomp_final, result_combine, po)
+    result_diff = decomp_final - true_final
 
-    print("The total number of points: ", true_final.shape[0] * true_final.shape[1])
-    print("The number of points getting locally updated: ", indice.shape)
+    print(f"The total number of points: {true_final.shape[0] * true_final.shape[1]}")
     print(
-        "Original number of points with different values: ",
-        np.argwhere(abs(decomp_final - true_final) > 1e-6).shape,
+        f"Original number of points with different values: {np.argwhere(abs(decomp_final - true_final) > 1e-6).shape}"
     )
+    print(f"The number of points getting locally updated: {number_of_points_updated}")
     print(
-        "The number of points with different values after local updating: ",
-        np.argwhere(abs(result_combine - true_final) > 1e-6).shape,
+        f"The number of points with different values after local updating: {np.argwhere(abs(corrected_result - true_final) > 1e-6).shape}"
     )
 
     count = true_final.shape[0] * true_final.shape[1]
 
-    diff_decomp = np.sum(result_diff) / count
-    diff_corrected = np.sum(result_combine - true_final) / count
-    print(
-        "The average error between direct computation and decomposition: ", diff_decomp
-    )
-    print(
-        "The average error between direct computation and local updates: ",
-        diff_corrected,
-    )
+    # diff_decomp = np.sum(result_diff) / count
+    # diff_corrected = np.sum(corrected_result - true_final) / count
+    # print(
+    #     "The average error between direct computation and decomposition: ", diff_decomp
+    # )
+    # print(
+    #     "The average error between direct computation and local updates: ",
+    #     diff_corrected,
+    # )
 
     diff_decomp = np.sum(abs(result_diff)) / count
-    diff_corrected = np.sum(abs(result_combine - true_final)) / count
+    diff_corrected = np.sum(abs(corrected_result - true_final)) / count
     print(
-        "The average absolute error between direct computation and decomposition: ",
-        diff_decomp,
+        f"The average absolute error between direct computation and decomposition: {diff_decomp:0.4f}"
     )
     print(
-        "The average absolute error between direct computation and local updates: ",
-        diff_corrected,
+        f"The average absolute error between direct computation and local updates: {diff_corrected:0.4f}"
     )
 
     diff_decomp_max = np.max(abs(result_diff))
-    diff_corrected_max = np.max(abs(result_combine - true_final))
+    diff_corrected_max = np.max(abs(corrected_result - true_final))
     print(
-        "The maximum absolute error between direct computation and decomposition: ",
-        diff_decomp_max,
+        f"The maximum absolute error between direct computation and decomposition: {diff_decomp_max:0.4f}"
     )
     print(
-        "The maximum absolute error between direct computation and local updates: ",
-        diff_corrected_max,
+        f"The maximum absolute error between direct computation and local updates: {diff_corrected_max:0.4f}"
     )
 
 
@@ -212,7 +223,6 @@ def correctionBasedOnLocalUpdate(
     decomposition_result: DecompositionResult, config: Config
 ):
     """
-
     def recompute_value(point, prev_combined_result):
         # use prev_combined result to recompute point
         old_val = point.value()
@@ -222,9 +232,6 @@ def correctionBasedOnLocalUpdate(
             flag = true
 
         return point, flag
-
-
-
 
 
     cumulative_points_to_correct = array of 0s based on the combined_result array.
@@ -300,7 +307,8 @@ def compareArrays(array1, array2, number_of_precision_points=8, debug=False):
         number_of_entires_with_error = len(
             np.argwhere(abs(diffArray) > precision_value)
         )
-        print(f"1e-{precision}: {precision_value} {number_of_entires_with_error}")
+        # print(f"1e-{precision}: {precision_value} {number_of_entires_with_error}")
+        print(f"{precision_value}: {number_of_entires_with_error}")
 
 
 def main():
@@ -313,7 +321,7 @@ def main():
         saveAllTimeStep=True,
         # lookback_length=config._lookback_length,
     )
-    printResults(result_list=result_true)
+    # printResults(result_list=result_true)
     # direct_comp_old(
     #     num=config._number_of_grid_points,
     #     saveAllTimeStep=True,
@@ -337,16 +345,19 @@ def main():
     decomp_final_old = result_decomp_old[-1]
     result_diff = decomp_final - true_final
 
+    # print("comparing decomposition_old and decomposition")
+    # count = 0
     # for x, y in zip(result_decomp_old, decomposition_result.combined()):
     #     # result_diff2 = decomp_final - decomp_final_old
+    #     print(f"Timestep: {count}")
+    #     count += 1
     #     compareArrays(x, y)
+    #     print("-----------------------------------")
     #     # exit(1)
     #     # plotArray(result_diff2)
 
     print("comparing decomp_final and true_final")
     compareArrays(decomp_final, true_final)
-
-    # exit(1)
 
     correctionBasedOnDirectComputation(
         true_final=true_final,

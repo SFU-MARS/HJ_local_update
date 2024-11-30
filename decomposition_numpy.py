@@ -29,7 +29,7 @@ class DecompositionResult:
         return self._combined_results
 
 
-def decomposition_old(num, saveAllTimeStep=True, lookback_length=0.02):
+def decomposition_old(num, saveAllTimeStep=True, lookback_length=0.02, debug=False):
 
     print("decomposition_old")
     print("================================================")
@@ -72,10 +72,12 @@ def decomposition_old(num, saveAllTimeStep=True, lookback_length=0.02):
 
     tNow = tau[0]
     start = time.time()
+    count = 0
 
     for i in range(1, len(tau)):
         t = np.array([tNow, tau[i]])
-        print("Time step: ", t)
+        print(f"Time step: {count}, {t}")
+        count += 1
 
         # while tNow < tau[i]:
         # Update the value function
@@ -99,8 +101,8 @@ def decomposition_old(num, saveAllTimeStep=True, lookback_length=0.02):
 
     execution_time = time.time() - start
 
-    print("Total kernel time: ", execution_time)
-    print("Finished updating the value function")
+    # print("Total kernel time: ", execution_time)
+    print(f"Total kernel time: {execution_time:.4f} seconds")
 
     """
     Combine the results from 2 subsystems
@@ -146,7 +148,7 @@ def decomposition_old(num, saveAllTimeStep=True, lookback_length=0.02):
     return result_full
 
 
-def decomposition(config: Config, saveAllTimeStep=True):
+def decomposition(config: Config, saveAllTimeStep=True, debug=False):
     print("decomposition")
     print("================================================")
 
@@ -185,10 +187,12 @@ def decomposition(config: Config, saveAllTimeStep=True):
 
     tNow = tau[0]
     start = time.time()
+    count = 0
 
     for i in range(1, len(tau)):
         t = np.array([tNow, tau[i]])
-        print("Time step: ", t)
+        print(f"Time step: {count}, {t}")
+        count += 1
 
         # while tNow < tau[i]:
         # Update the value function
@@ -212,8 +216,7 @@ def decomposition(config: Config, saveAllTimeStep=True):
 
     execution_time = time.time() - start
 
-    print("Total kernel time: ", execution_time)
-    print("Finished updating the value function")
+    print(f"Total kernel time: {execution_time:.4f} seconds")
 
     """
     Combine the results from 2 subsystems
