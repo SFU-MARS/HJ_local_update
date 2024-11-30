@@ -120,13 +120,17 @@ def direct_computation(config: Config, saveAllTimeStep):
 
     # initialize value function
     # data = ShapeRectangle(g, [-1.0, -1.0], [1.0, 1.0])
+    print("grid:")
+    print(g.vs)
     data = config.value_function_2d(grid=g)
-    print(f"grid: {g.vs}")
-    print(f"data_sub: {data}")
+    print("data_sub:")
+    print(data)
 
     """
     Direct updating loop
     """
+    print(f"saveAllTimeStep: {saveAllTimeStep}")
+
     if saveAllTimeStep:
         data_list = []
         data_list.append(data)
@@ -137,10 +141,12 @@ def direct_computation(config: Config, saveAllTimeStep):
     data_change = np.zeros(tuple(g.pts_each_dim))
     tNow = tau[0]
     start = time.time()
+    count = 0
 
     for i in range(1, len(tau)):
         t = np.array([tNow, tau[i]])
-        print("Time step: ", t)
+        print(f"Time step: {count}, {t}")
+        count += 1
 
         # while tNow < tau[i]:
         # Update the value function
@@ -178,6 +184,7 @@ def direct_computation(config: Config, saveAllTimeStep):
 
     print(f"grid: {g.vs}")
     print(f"data_sub: {data}")
+    print(f"len(data_list): {len(data_list)}")
 
     if saveAllTimeStep:
         return g, data_list

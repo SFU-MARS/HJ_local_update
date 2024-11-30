@@ -14,7 +14,23 @@ from config import Config, construct1DGrid, construct2DGrid
 import time
 
 
+class DecompositionResult:
+    def __init__(
+        self,
+        upper_subsystem_results,
+        lower_subsystem_results,
+        combined_results,
+    ) -> None:
+        self._upper_subsystem_results = upper_subsystem_results
+        self._lower_subsystem_results = lower_subsystem_results
+        self._combined_results = combined_results
+
+    def combined(self):
+        return self._combined_results
+
+
 def decomposition_old(num, saveAllTimeStep=True, lookback_length=0.02):
+
     print("decomposition_old")
     print("================================================")
     # num = 51
@@ -133,7 +149,7 @@ def decomposition_old(num, saveAllTimeStep=True, lookback_length=0.02):
 def decomposition(config: Config, saveAllTimeStep=True):
     print("decomposition")
     print("================================================")
-    
+
     # Create 1D Grid
     g = construct1DGrid(
         number_of_grid_points=config._number_of_grid_points,
@@ -204,16 +220,26 @@ def decomposition(config: Config, saveAllTimeStep=True):
     """
 
     if not saveAllTimeStep:
-        result_full = combine_subsystem_results(result_upper=data_sub,
-                                                result_lower=data_sub,
-                                                number_of_grid_points=config._number_of_grid_points)
+        result_full = combine_subsystem_results(
+            result_upper=data_sub,
+            result_lower=data_sub,
+            number_of_grid_points=config._number_of_grid_points,
+        )
     else:
-        result_full = combine_subsystem_results_all_time_steps(result_upper_list=data_list,
-                                                result_lower_list=data_list,
-                                                number_of_grid_points=config._number_of_grid_points)
+        result_full = combine_subsystem_results_all_time_steps(
+            result_upper_list=data_list,
+            result_lower_list=data_list,
+            number_of_grid_points=config._number_of_grid_points,
+        )
         pass
-    
-    return result_full
+
+    decomposition_result = DecompositionResult(
+        combined_results=result_full,
+        lower_subsystem_results=data_list,
+        upper_subsystem_results=data_list,
+    )
+
+    return decomposition_result
 
 
 def combine_subsystem_results(result_upper, result_lower, number_of_grid_points):
@@ -231,7 +257,9 @@ def combine_subsystem_results(result_upper, result_lower, number_of_grid_points)
     return result_full
 
 
-def combine_subsystem_results_all_time_steps(result_upper_list, result_lower_list, number_of_grid_points):
+def combine_subsystem_results_all_time_steps(
+    result_upper_list, result_lower_list, number_of_grid_points
+):
 
     result_upper_flip = np.flip(result_upper_list, axis=0)
     result_upper_expand = np.tile(result_upper_list, (number_of_grid_points, 1, 1))
