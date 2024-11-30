@@ -1,5 +1,5 @@
 from direct_numpy import direct_computation_old, direct_computation
-from decomposition_numpy import decomposition, decomposition_old
+from decomposition_numpy import decomposition, decomposition_old, DecompositionResult
 
 import numpy as np
 import heterocl as hcl
@@ -25,13 +25,14 @@ from update_V_numpy import spa_derivX, spa_derivY
 import time
 
 np.set_printoptions(threshold=py_sys.maxsize)
+np.set_printoptions(precision=4)
 
 
 def initConfig() -> Config:
     return Config(
         # number_of_grid_points=101,
-        number_of_grid_points=11,
-        lookback_length=0.02,
+        number_of_grid_points=5,
+        lookback_length=0.2,
         time_steps=0.02,
         small_number=1e-5,
         sys_2d=couple_u(
@@ -59,8 +60,15 @@ def plotArray(array, show=True):
 
 def correctionBasedOnDirectComputation(true_final, result_decomp, config: Config):
 
+    print("correctionBasedOnDirectComputation")
+    print("================================================")
     decomp_final = result_decomp[-1]
     result_diff = decomp_final - true_final
+
+    print("true_final:")
+    print(true_final)
+    print("decomp_final:")
+    print(decomp_final)
 
     indice = np.argwhere(abs(result_diff) > 1e-6)
     indice_transpose = indice.transpose()
@@ -68,7 +76,7 @@ def correctionBasedOnDirectComputation(true_final, result_decomp, config: Config
 
     # Initialize from config
     grid = construct2DGrid(number_of_grid_points=config._number_of_grid_points)
-    data_init = config.value_function_2d(grid=true_final_grid)
+    data_init = config.value_function_2d(grid=grid)
     t_step = config._time_steps
     tau = config._tau
     sys = config._sys_2d
@@ -143,7 +151,11 @@ def correctionBasedOnDirectComputation(true_final, result_decomp, config: Config
     result_combine = decomp_final.copy()
 
     np.put(result_combine, indices_ref, data[indice_transpose[0], indice_transpose[1]])
+    print("Corrected result:")
+    print(result_combine)
     print("Im here")
+
+    compareArrays(result_combine, true_final)
 
     """
     Comparision with direct computation
@@ -196,6 +208,101 @@ def correctionBasedOnDirectComputation(true_final, result_decomp, config: Config
     )
 
 
+def correctionBasedOnLocalUpdate(
+    decomposition_result: DecompositionResult, config: Config
+):
+    """
+
+    def recompute_value(point, prev_combined_result):
+        # use prev_combined result to recompute point
+        old_val = point.value()
+        new_val = point.recompute(prev_combined_result)
+        flag = false
+        if new_value - old_value > threshold2:
+            flag = true
+
+        return point, flag
+
+
+
+
+
+    cumulative_points_to_correct = array of 0s based on the combined_result array.
+    new_points_to_correct = array of 0s based on the combined_result array.
+    for each time_step:
+
+        # rest frontier, new_points_to correct
+
+        # find the points to correct from lower and upper subsystem results
+        for each point:
+            if lower[point] - upper[point] < threshold:
+                new_points_to_correct[point] = 1
+                # add to cumulative_points_to_correct
+                # Optimize this stuff
+                cumulative_points_to_correct[point] = 1
+
+        # for all points to be recomputed, recompute them.
+        for point in cumulative_points_to_correct:
+            flag, point = recompute_value(point, prev_combined_result)
+            # Optimize this stuff: can we maintain the border and only check frontier for the border vertices?
+            if flag:
+                # should recompute the neighbors also.
+                frontier[point] = 1
+
+        #
+        while frontier is not empty:
+            # should check neighbors of all points in fronier
+            for point in frontier:
+                for neighbor of point:
+                    if cumulative_points_to_correct[neighbor] is False:
+                        new_points_to_correct[neighbor] = 1
+
+            # reset frontier for next iteration
+            for point in new_points_to_correct:
+                new_points_to_correct[point] = 0
+                flag, point = recompute_value(point, prev_combined_result)
+
+                if flag:
+                    # mark this point for corrections in all future time steps
+                    cumulative_points_to_correct[point] = 1
+
+                    # add it to frontier and check its neighbors
+                    frontier[point] = 1
+
+    """
+    pass
+
+
+def printResults(result_list):
+    # a list of result arrays
+    i = 0
+    print(f"Printing results array of length {len(result_list)}")
+    for result in result_list:
+        print(i)
+        print(result)
+        i += 1
+
+
+def compareArrays(array1, array2, number_of_precision_points=8, debug=False):
+    diffArray = abs(array1 - array2)
+    if debug:
+        print("array1")
+        print(array1)
+        print("---------------------")
+        print("array2")
+        print(array2)
+        print("---------------------")
+        print("diff_array")
+        print(diffArray)
+
+    for precision in range(1, number_of_precision_points):
+        precision_value = 1 / (10**precision)
+        number_of_entires_with_error = len(
+            np.argwhere(abs(diffArray) > precision_value)
+        )
+        print(f"1e-{precision}: {precision_value} {number_of_entires_with_error}")
+
+
 def main():
     # Initializtion
     config = initConfig()
@@ -206,6 +313,7 @@ def main():
         saveAllTimeStep=True,
         # lookback_length=config._lookback_length,
     )
+    printResults(result_list=result_true)
     # direct_comp_old(
     #     num=config._number_of_grid_points,
     #     saveAllTimeStep=True,
@@ -216,7 +324,7 @@ def main():
         saveAllTimeStep=True,
         lookback_length=config._lookback_length,
     )
-    result_decomp = decomposition(
+    decomposition_result: DecompositionResult = decomposition(
         config=config,
         saveAllTimeStep=True,
     )
@@ -225,17 +333,24 @@ def main():
     data_init = config.value_function_2d(grid=grid)
 
     true_final = result_true[-1]
-    decomp_final = result_decomp[-1]
+    decomp_final = decomposition_result.combined()[-1]
     decomp_final_old = result_decomp_old[-1]
     result_diff = decomp_final - true_final
 
-    for x, y in result_decomp_old, result_decomp:
-        result_diff2 = decomp_final - decomp_final_old
-        # plotArray(result_diff2)
+    # for x, y in zip(result_decomp_old, decomposition_result.combined()):
+    #     # result_diff2 = decomp_final - decomp_final_old
+    #     compareArrays(x, y)
+    #     # exit(1)
+    #     # plotArray(result_diff2)
+
+    print("comparing decomp_final and true_final")
+    compareArrays(decomp_final, true_final)
+
+    # exit(1)
 
     correctionBasedOnDirectComputation(
         true_final=true_final,
-        result_decomp=result_decomp,
+        result_decomp=decomposition_result.combined(),
         config=config,
     )
 
