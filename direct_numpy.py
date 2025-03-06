@@ -28,6 +28,7 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
 
     ## Initialize value function
     data = ShapeRectangle(g, [-1.0, -1.0], [1.0, 1.0])
+    # data = CylinderShape(g, [], [0.0, 0.0], 1)
 
     # lookback_length = 0.02
     t_step = 0.02

@@ -22,7 +22,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
     g = Grid(grid_min, grid_max, dims, N)
     
     # Initialize value function
-    data_sub = ShapeRectangle(g, [-1.0], [1.0])
+    data_sub_1 = ShapeRectangle(g, [-1.0], [1.0])
+    data_sub_2 = ShapeRectangle(g, [-1.0], [1.0])
     
     # Visualization
     po = PlotOptions(do_plot=False, plot_type="value", plotDims=[0],
@@ -35,7 +36,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
     
     # Set system dynamics
-    sys = subsys(x=[0], uMax=1, dMax=0.0, uMode='min', dMode='min')
+    sys_1 = subsys(x=[0], uMax=1, dMax=0.0, uMode='min', dMode='min')
+    sys_2 = subsys(x=[0], uMax=1, dMax=0.0, uMode='min', dMode='min')
     
     list_x = np.reshape(g.vs[0], g.pts_each_dim[0])
     
@@ -43,11 +45,11 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
     
     # Set computation task and compute HJ PDE
     '''
-    Computation in subsystems
+    Computation in subsystem 1
     '''
     if saveAllTimeStep:
-        data_list = []
-        data_list.append(data_sub)
+        data_list_1 = []
+        data_list_1.append(data_sub_1.copy())      
         # print('The shape of data list is: ', data_list)
         
     tNow = tau[0]
@@ -61,26 +63,61 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
             # Update the value function
         for x in range(len(list_x)):
             # Get spatial derivative
-            dV_dx_L, dV_dx_R = spa_deriv(x, data_sub, g)
+            dV_dx_L, dV_dx_R = spa_deriv(x, data_sub_1, g)
             # Get the average gradient
             dV_dx = (dV_dx_L + dV_dx_R)/2
             # Get the dynamical rates of change
-            uOpt = sys.opt_ctrl_numpy(t, [list_x[x]], dV_dx)
-            dx_dt = sys.dynamics_numpy(t, [list_x[x]], uOpt, 0)
+            uOpt = sys_1.opt_ctrl_numpy(t, [list_x[x]], dV_dx)
+            dx_dt = sys_1.dynamics_numpy(t, [list_x[x]], uOpt, 0)
             
             # Updating the value function
             data_change[x] = dx_dt*dV_dx
                         
-        data_sub = data_sub + t_step * data_change
+        data_sub_1 = data_sub_1 + t_step * data_change
         if saveAllTimeStep:
-            data_list.append(data_sub)
+            data_list_1.append(data_sub_1)
+        data_change = np.zeros(tuple(g.pts_each_dim))
+        tNow = tNow + t_step
+        
+    '''
+    Computation in subsystem 2
+    '''
+    if saveAllTimeStep:
+        data_list_2 = []
+        data_list_2.append(data_sub_2.copy())      
+        # print('The shape of data list is: ', data_list)
+        
+    tNow = tau[0]
+    # start = time.time()
+    
+    for i in range(1, len(tau)):
+        t = np.array([tNow, tau[i]])
+        print("Time step: ", t)
+        
+        # while tNow < tau[i]:
+            # Update the value function
+        for x in range(len(list_x)):
+            # Get spatial derivative
+            dV_dx_L, dV_dx_R = spa_deriv(x, data_sub_2, g)
+            # Get the average gradient
+            dV_dx = (dV_dx_L + dV_dx_R)/2
+            # Get the dynamical rates of change
+            uOpt = sys_2.opt_ctrl_numpy(t, [list_x[x]], dV_dx)
+            dx_dt = sys_2.dynamics_numpy(t, [list_x[x]], uOpt, 0)
+            
+            # Updating the value function
+            data_change[x] = dx_dt*dV_dx
+                        
+        data_sub_2 = data_sub_2 + t_step * data_change
+        if saveAllTimeStep:
+            data_list_2.append(data_sub_2)
         data_change = np.zeros(tuple(g.pts_each_dim))
         tNow = tNow + t_step
             
-    execution_time = time.time() - start
+    # execution_time = time.time() - start
     
-    print("Total kernel time: ", execution_time)
-    print("Finished updating the value function")
+    # print("Total kernel time: ", execution_time)
+    # print("Finished updating the value function")
     
     
     '''
@@ -94,12 +131,12 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
     g = Grid(grid_min, grid_max, dims, N)
     
     if not saveAllTimeStep:
-        result_upper_flip = np.flip(data_sub, axis=0) 
+        result_upper_flip = np.flip(data_sub_1, axis=0) 
         result_upper_expand = np.tile(result_upper_flip, (num, 1))
         print(result_upper_expand.shape)
         result_upper = np.transpose(result_upper_expand, (1,0))
 
-        result_lower_flip = np.flip(data_sub, axis=0)
+        result_lower_flip = np.flip(data_sub_2, axis=0)
         result_lower_expand = np.tile(result_lower_flip, (num, 1))
         print(result_lower_expand.shape)
         result_lower = np.transpose(result_lower_expand, (0,1))
@@ -108,14 +145,14 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
         
     else:
         
-        result_upper_flip = np.flip(data_list, axis=0) 
-        result_upper_expand = np.tile(data_list, (num, 1, 1))
+        # result_upper_flip = np.flip(data_list_1, axis=0) 
+        result_upper_expand = np.tile(data_list_1, (num, 1, 1))
         # print(result_upper_expand.shape)
         result_upper = np.transpose(result_upper_expand, (1,2,0))
         # print(result_upper.shape)
 
-        result_lower_flip = np.flip(data_list, axis=0)
-        result_lower_expand = np.tile(data_list, (num, 1, 1))
+        # result_lower_flip = np.flip(data_list_2, axis=0)
+        result_lower_expand = np.tile(data_list_2, (num, 1, 1))
         # print(result_lower_expand.shape)
         result_lower = np.transpose(result_lower_expand, (1,0,2))
         # print(result_lower.shape)
@@ -124,6 +161,11 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
         
         # print('Decomposition Correct')
         
-    return result_full
+    execution_time = time.time() - start
+    
+    print("Total kernel time decomposition: ", execution_time)
+    print("Finished updating the value function")
+        
+    return result_full, result_upper, result_lower
             
     

@@ -19,13 +19,15 @@ from system import couple_u
 # The function of computing first order spatial derivative
 from update_V_numpy import spa_derivX, spa_derivY
 
+from leaking_corner import ground_truth_L, new_theory_L
+
 import time
 
 num = 101
-lookback_length = 0.02
+lookback_length = 0.2
 
 grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
-result_decomp = decomposition(num, saveAllTimeStep=True, lookback_length=lookback_length)
+result_decomp, result_upper, result_lower = decomposition(num, saveAllTimeStep=True, lookback_length=lookback_length)
 
 print('The size of the decomposition result', result_decomp.shape)
 
@@ -33,12 +35,21 @@ true_final = result_true[-1]
 decomp_final = result_decomp[-1]
 result_diff = decomp_final - true_final
 
-# fig = px.imshow(result_diff)
+fig = px.imshow(result_diff)
 # fig.show()
 
-indice = np.argwhere(abs(result_diff) > 1e-6)
+indice = new_theory_L(result_decomp, result_true[0].copy(), result_upper, result_lower)
+indice_gt = ground_truth_L(true_final, decomp_final)
+
+
+indice = indice
 indice_transpose = indice.transpose()
 indices_ref = np.ravel_multi_index(indice_transpose, decomp_final.shape)
+
+plot_diff = result_diff.copy()
+np.put(plot_diff, indices_ref, 1)
+fig1 = px.imshow(plot_diff)
+# fig1.show()
 
 # Set computational time steps
 t_step = 0.02
@@ -48,7 +59,8 @@ tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 sys = couple_u(x=[0,0], uMax=1, dMax=0.0, uMode='min', dMode='min')
 
 # Initialize the value function
-data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
+# data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
+data_init = result_true[0].copy()
 
 # data = decomp_final.copy()
 # np.put(data, indices_ref, data_init[indice_transpose[0], indice_transpose[1]])
@@ -125,19 +137,23 @@ print('Im here')
 '''
 Comparision with direct computation
 '''
-plot_overlay_set(grid, true_final, decomp_final, result_combine, po)
+# plot_overlay_set(grid, true_final, decomp_final, result_combine, po)
+np.save('result_true_2d.npy', result_true)
+np.save('result_decomp_2d.npy', result_decomp)
+np.save('result_combine_2d.npy', result_combine)
+np.save('indices_detected', indices_ref)
 
 print('The total number of points: ', true_final.shape[0]*true_final.shape[1])
 print('The number of points getting locally updated: ', indice.shape)
-print('Original number of points with different values: ', np.argwhere(abs(decomp_final-true_final)>1e-6).shape)
-print('The number of points with different values after local updating: ', np.argwhere(abs(result_combine-true_final)>1e-6).shape)
+print('Original number of points with different values: ', np.argwhere(abs(decomp_final-true_final)>1e-3).shape)
+print('The number of points with different values after local updating: ', np.argwhere(abs(result_combine-true_final)>1e-3).shape)
 
 count = true_final.shape[0]*true_final.shape[1]
 
-diff_decomp = np.sum(result_diff) / count
-diff_corrected = np.sum(result_combine - true_final) / count
-print('The average error between direct computation and decomposition: ', diff_decomp)
-print('The average error between direct computation and local updates: ', diff_corrected)
+# diff_decomp = np.sum(result_diff) / count
+# diff_corrected = np.sum(result_combine - true_final) / count
+# print('The average error between direct computation and decomposition: ', diff_decomp)
+# print('The average error between direct computation and local updates: ', diff_corrected)
 
 diff_decomp = np.sum(abs(result_diff)) / count
 diff_corrected = np.sum(abs(result_combine - true_final)) / count
