@@ -1,5 +1,5 @@
 import heterocl as hcl
-from odp.spatialDerivatives.first_orderENO2D import *
+from odp.spatialDerivatives.firstOrderENO.first_orderENO2D import *
 import numpy as np
 
 

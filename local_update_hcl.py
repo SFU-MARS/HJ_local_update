@@ -1,7 +1,7 @@
 from direct_hcl import direct_comp
 from decomposition_hcl import decomposition
 
-from set_2plot import plot_overlay_set
+# from set_2plot import plot_overlay_set
 from odp.Plots import PlotOptions
 import numpy as np
 from odp.Plots import plot_isosurface, plot_valuefunction
