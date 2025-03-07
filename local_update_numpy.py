@@ -138,12 +138,12 @@ print('Im here')
 Comparision with direct computation
 '''
 # plot_overlay_set(grid, true_final, decomp_final, result_combine, po)
-<<<<<<< HEAD
-np.save('result_true_2d.npy', result_true)
-np.save('result_decomp_2d.npy', result_decomp)
-np.save('result_combine_2d.npy', result_combine)
-np.save('indices_detected', indices_ref)
-=======
+# <<<<<<< HEAD
+# np.save('result_true_2d.npy', result_true)
+# np.save('result_decomp_2d.npy', result_decomp)
+# np.save('result_combine_2d.npy', result_combine)
+# np.save('indices_detected', indices_ref)
+# =======
 
 print('The total number of points: ', true_final.shape[0]*true_final.shape[1])
 print('The number of points getting locally updated: ', indice.shape)
