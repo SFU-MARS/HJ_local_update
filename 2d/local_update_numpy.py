@@ -38,17 +38,13 @@ result_diff = decomp_final - true_final
 fig = px.imshow(result_diff)
 # fig.show()
 
-indice = new_theory_L(result_decomp, result_true[0].copy(), result_upper, result_lower)
+indices = new_theory_L(result_decomp, result_true[0].copy(), result_upper, result_lower)
 indice_gt = ground_truth_L(true_final, decomp_final)
 
 
-indice = indice
-indice_transpose = indice.transpose()
-indices_ref = np.ravel_multi_index(indice_transpose, decomp_final.shape)
-
-plot_diff = result_diff.copy()
-np.put(plot_diff, indices_ref, 1)
-fig1 = px.imshow(plot_diff)
+# plot_diff = result_diff.copy()
+# np.put(plot_diff, indices_ref, 1)
+# fig1 = px.imshow(plot_diff)
 # fig1.show()
 
 # Set computational time steps
@@ -92,6 +88,9 @@ for i in range(1, len(tau)):
 
     # while tNow < tau[i]:
         # Update the value function
+    indice = indices[len(tau)-1]
+    indice_transpose = indice.transpose()
+    indices_ref = np.ravel_multi_index(indice_transpose, decomp_final.shape)
 
         
     for ind in range(len(indice)):
