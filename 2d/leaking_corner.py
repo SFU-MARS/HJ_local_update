@@ -18,8 +18,14 @@ def new_theory_L(data_approx, data_init, data_upper, data_lower):
     # print('The delta 2 value is', delta_2)
     # delta = max(delta_1,delta_2)
     
-    delta = np.max(abs(data_init - data_approx))
+    delta = np.max(abs(data_init - data_approx), axis = (1,2))
+    
+    t_len = data_approx.shape[0]
     
     print('The delta value is', delta)
-    indice = np.argwhere(abs(data_upper[-1] - data_lower[-1]) <= delta)
+    indice = []
+    for i in range(t_len):
+        indice.append(np.argwhere(abs(data_upper[i] - data_lower[i]) <= delta[i]))
+    # indice = np.array(indice)
+    # print(indice.shape)
     return indice
