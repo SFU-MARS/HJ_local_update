@@ -24,24 +24,44 @@ from leaking_corner import ground_truth_L, new_theory_L
 
 import time
 
-num = 21
+num = 7
 lookback_length = 0.02
 
-# grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
-result_decomp, result_upper, result_lower = decomposition(num, saveAllTimeStep=True, lookback_length=lookback_length)
 grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
+result_decomp, result_upper, result_lower = decomposition(num, saveAllTimeStep=True, lookback_length=lookback_length)
 
 print('The size of the decomposition result', result_decomp.shape)
 
-true_final = result_true[-1]
 decomp_final = result_decomp[-1]
+true_final = result_true[-1]
 result_diff = decomp_final - true_final
 
 # fig = px.imshow(result_diff)
 # fig.show()
 
-indice = new_theory_L(result_decomp, result_true[0].copy(), result_upper, result_lower)
-indice_gt = ground_truth_L(true_final, decomp_final)
+# Create Grid
+grid_min = np.array([-1.0, -1.0, -2.0, -2.0, -2.0, -2.0])
+grid_max = np.array([4.0, 4.0, 2.0, 2.0, 2.0, 2.0])
+dims = grid_min.shape[0]
+N = np.array([num, num, num, num, num, num])
+grid = Grid(grid_min, grid_max, dims, N)
+
+## Initialize value function
+data1 = Lower_Half_Space(grid, 0, 0)
+data2 = Lower_Half_Space(grid, 1, 0)
+# data3 = Lower_Half_Space(grid, 4, -1)
+# data4 = Upper_Half_Space(grid, 4, 1)
+data = np.minimum(data1, data2)
+# data = np.minimum(data, data3)
+# data = np.minimum(data, data4)
+
+
+
+# data = np.minimum(data_upper, data_lower)   
+
+
+indice = new_theory_L(result_decomp, data, result_upper, result_lower)
+# indice_gt = ground_truth_L(true_final, decomp_final)
 
 
 indice = indice
@@ -61,16 +81,16 @@ t_step = 0.02
 small_number = 1e-5
 tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
+sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='min', dMode='min')
 
 # Initialize the value function
 # data_init = ShapeRectangle(grid, [-1.0, -1.0, -1.0, -1.0, -math.pi, -1.0], [1.0, 1.0, 1.0, 1.0, math.pi, 1.0])
-data_init = result_true[0].copy()
+# data_init = data
 
 # data = decomp_final.copy()
 # np.put(data, indices_ref, data_init[indice_transpose[0], indice_transpose[1]])
 
-data = data_init.copy()
+# data = data_init.copy()
 
 
 '''
@@ -159,10 +179,13 @@ Comparision with direct computation
 # plot_overlay_3dsets(grid, true_final, decomp_final, po)
 # plot_overlay_3dsets(grid, true_final, result_combine, po)
 
-# np.save('result_direct_6d.npy', result_true)
-# np.save('result_decomp_6d.npy', result_decomp)
-# np.save('result_local_6d.npy', result_combine)
 
+# grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
+# true_final = result_true[-1]
+
+# np.save('result_direct_6d.npy', result_true)
+np.save('result_decomp_6d_002.npy', result_decomp)
+np.save('result_local_6d_002.npy', result_combine)
 
 print('The total number of points: ', true_final.shape[0]*true_final.shape[1]*true_final.shape[2]*true_final.shape[3]*true_final.shape[4]*true_final.shape[5])  
 print('The number of points getting locally updated: ', indice.shape)

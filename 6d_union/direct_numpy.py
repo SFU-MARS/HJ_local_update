@@ -28,14 +28,20 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
     g = Grid(grid_min, grid_max, dims, N)
 
     ## Initialize value function
-    data = ShapeRectangle(g, [-1.0, -1.0, -3.0, -3.0, -1.0, -3.0], [0.0, 0.0, 3.0, 3.0, 1.0, 3.0])
-
+    data1 = Lower_Half_Space(g, 0, 0)
+    data2 = Lower_Half_Space(g, 1, 0)
+    # data3 = Lower_Half_Space(g, 4, -1)
+    # data4 = Upper_Half_Space(g, 4, 1)
+    data = np.minimum(data1, data2)
+    # data = np.minimum(data, data3)
+    # data = np.minimum(data, data4)
+    
     # lookback_length = 0.02
     t_step = 0.02
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-    sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
+    sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='min', dMode='min')
     
 
     '''

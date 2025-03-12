@@ -52,7 +52,7 @@ class quadrotor:
             :param
         '''
         
-        g =10
+        g = 10
         
         x_dot = state[2]
         y_dot = state[3]

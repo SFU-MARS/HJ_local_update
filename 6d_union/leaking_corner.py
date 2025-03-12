@@ -20,6 +20,6 @@ def new_theory_L(data_approx, data_init, data_upper, data_lower):
 
     delta = np.max(abs(data_init - data_approx))
     print('The delta value is', delta)
-    indice = np.argwhere(abs(data_upper[0] - data_lower[0]) <= delta)
+    indice = np.argwhere(abs(data_upper[0] - data_lower[0]) < delta)
     
     return indice

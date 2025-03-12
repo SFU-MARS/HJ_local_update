@@ -22,8 +22,12 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
     g = Grid(grid_min, grid_max, dims, N)
     
     # Initialize value function
-    data_sub_1 = ShapeRectangle(g, [-1.0, -3.0, -1.0, -3.0], [0.0, 3.0, 1.0, 3.0])
-    data_sub_2 = ShapeRectangle(g, [-1.0, -3.0, -1.0, -3.0], [0.0, 3.0, 1.0, 3.0])
+    data_sub_1 = Lower_Half_Space(g, 0, 0)
+    # data_sub_1_2 = Lower_Half_Space(g, 2, -1)
+    # data_sub_1_3 = Upper_Half_Space(g, 2, 1)
+    # data_sub_1 = np.minimum(data_sub_1_1, data_sub_1_2)
+    # data_sub_1 = np.minimum(data_sub_1, data_sub_1_3)
+    data_sub_2 = data_sub_1.copy()
     
     # Visualization
     po = PlotOptions(do_plot=False, plot_type="value", plotDims=[0],
@@ -37,8 +41,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
     
     # Set system dynamics
-    sys_1 = subsys_1(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
-    sys_2 = subsys_2(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
+    sys_1 = subsys_1(uTMax=1, utMax=1, dMax=0.0, uMode='min', dMode='min')
+    sys_2 = subsys_2(uTMax=1, utMax=1, dMax=0.0, uMode='min', dMode='min')
     
     list_x0 = np.reshape(g.vs[0], g.pts_each_dim[0])
     list_x1 = np.reshape(g.vs[1], g.pts_each_dim[1])
@@ -164,12 +168,12 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
         print(result_upper_expand.shape)
         result_upper = np.transpose(result_upper_expand, (2, 0, 3, 1, 4, 5))
 
-        result_lower_flip = np.flip(data_sub_2, axis=0)
+        result_lower_flip = data_sub_2
         result_lower_expand = np.tile(result_lower_flip, (num, num, 1, 1, 1, 1))
         print(result_lower_expand.shape)
         result_lower = np.transpose(result_lower_expand, (0,2,1,3,4,5))
 
-        result_full = np.maximum(result_upper, result_lower)   
+        result_full = np.minimum(result_upper, result_lower)   
         
     else:
         
@@ -185,7 +189,7 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
         result_lower = np.transpose(result_lower_expand, (2, 0, 3, 1, 4, 5, 6))
         # print(result_lower.shape)
 
-        result_full = np.maximum(result_upper, result_lower)
+        result_full = np.minimum(result_upper, result_lower)
         
         # print('Decomposition Correct')
         
@@ -193,6 +197,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
     
     print("Total kernel time decomposition: ", execution_time)
     print("Finished updating the value function")
+    
+    np.save('result_decomp_6d_002.npy', result_full)
         
     return result_full, result_upper, result_lower
             
