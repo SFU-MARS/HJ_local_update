@@ -20,7 +20,7 @@ from system import quadrotor
 # The function of computing first order spatial derivative
 from spatial_V_numpy import spa_deriv6X1, spa_deriv6X2, spa_deriv6X3, spa_deriv6X4, spa_deriv6X5, spa_deriv6X6
 
-from leaking_corner import ground_truth_L, new_theory_L
+from leaking_corner import *
 
 import time
 
@@ -49,15 +49,16 @@ grid = Grid(grid_min, grid_max, dims, N)
 ## Initialize value function
 data1 = Lower_Half_Space(grid, 0, 0)
 data2 = Lower_Half_Space(grid, 1, 0)
-# data3 = Lower_Half_Space(grid, 4, -1)
-# data4 = Upper_Half_Space(grid, 4, 1)
+data3 = Lower_Half_Space(grid, 4, -1)
+data4 = Upper_Half_Space(grid, 4, 1)
 data = np.minimum(data1, data2)
 # data = np.minimum(data, data3)
 # data = np.minimum(data, data4)
 
 
 
-# data = np.minimum(data_upper, data_lower)   
+# data = np.minimum(data_upper, data_lower)  
+delta = ground_truth_delta(true_final, decomp_final, result_upper[-1], result_lower[-1]) 
 
 
 indice = new_theory_L(result_decomp, data, result_upper, result_lower)
@@ -81,7 +82,7 @@ t_step = 0.02
 small_number = 1e-5
 tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='min', dMode='min')
+sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
 
 # Initialize the value function
 # data_init = ShapeRectangle(grid, [-1.0, -1.0, -1.0, -1.0, -math.pi, -1.0], [1.0, 1.0, 1.0, 1.0, math.pi, 1.0])

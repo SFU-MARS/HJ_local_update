@@ -30,8 +30,8 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
     ## Initialize value function
     data1 = Lower_Half_Space(g, 0, 0)
     data2 = Lower_Half_Space(g, 1, 0)
-    # data3 = Lower_Half_Space(g, 4, -1)
-    # data4 = Upper_Half_Space(g, 4, 1)
+    data3 = Lower_Half_Space(g, 4, -1)
+    data4 = Upper_Half_Space(g, 4, 1)
     data = np.minimum(data1, data2)
     # data = np.minimum(data, data3)
     # data = np.minimum(data, data4)
@@ -41,7 +41,7 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-    sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='min', dMode='min')
+    sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
     
 
     '''

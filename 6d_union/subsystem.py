@@ -105,7 +105,8 @@ class subsys_2:
         Compute the system dynamics
             :param
         '''
-        g = 10
+        g = 0
+        
         y_dot = state[1]
         vy_dot = uOpt[0]*math.cos(state[2]) -g
         theta_dot = state[3]

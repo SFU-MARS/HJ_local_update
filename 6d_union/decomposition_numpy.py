@@ -22,10 +22,11 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
     g = Grid(grid_min, grid_max, dims, N)
     
     # Initialize value function
-    data_sub_1 = Lower_Half_Space(g, 0, 0)
-    # data_sub_1_2 = Lower_Half_Space(g, 2, -1)
-    # data_sub_1_3 = Upper_Half_Space(g, 2, 1)
-    # data_sub_1 = np.minimum(data_sub_1_1, data_sub_1_2)
+    data_sub_1_1 = Lower_Half_Space(g, 0, 0)
+    data_sub_1_2 = Lower_Half_Space(g, 2, -1)
+    data_sub_1_3 = Upper_Half_Space(g, 2, 1)
+    data_sub_1 = data_sub_1_1
+    # data_sub_1 = np.minimum(data_sub_1, data_sub_1_2)
     # data_sub_1 = np.minimum(data_sub_1, data_sub_1_3)
     data_sub_2 = data_sub_1.copy()
     
@@ -41,8 +42,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
     
     # Set system dynamics
-    sys_1 = subsys_1(uTMax=1, utMax=1, dMax=0.0, uMode='min', dMode='min')
-    sys_2 = subsys_2(uTMax=1, utMax=1, dMax=0.0, uMode='min', dMode='min')
+    sys_1 = subsys_1(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
+    sys_2 = subsys_2(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
     
     list_x0 = np.reshape(g.vs[0], g.pts_each_dim[0])
     list_x1 = np.reshape(g.vs[1], g.pts_each_dim[1])
