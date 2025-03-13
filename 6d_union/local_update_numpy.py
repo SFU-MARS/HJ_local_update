@@ -24,17 +24,17 @@ from leaking_corner import *
 
 import time
 
-num = 7
-lookback_length = 0.02
+num = 21
+lookback_length = 0.1
 
-grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
+# grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
 result_decomp, result_upper, result_lower = decomposition(num, saveAllTimeStep=True, lookback_length=lookback_length)
 
 print('The size of the decomposition result', result_decomp.shape)
 
 decomp_final = result_decomp[-1]
-true_final = result_true[-1]
-result_diff = decomp_final - true_final
+# true_final = result_true[-1]
+# result_diff = decomp_final - true_final
 
 # fig = px.imshow(result_diff)
 # fig.show()
@@ -58,7 +58,7 @@ data = np.minimum(data1, data2)
 
 
 # data = np.minimum(data_upper, data_lower)  
-delta = ground_truth_delta(true_final, decomp_final, result_upper[-1], result_lower[-1]) 
+# delta = ground_truth_delta(true_final, decomp_final, result_upper[-1], result_lower[-1]) 
 
 
 indice = new_theory_L(result_decomp, data, result_upper, result_lower)
@@ -185,27 +185,27 @@ Comparision with direct computation
 # true_final = result_true[-1]
 
 # np.save('result_direct_6d.npy', result_true)
-np.save('result_decomp_6d_002.npy', result_decomp)
-np.save('result_local_6d_002.npy', result_combine)
+np.save('result_decomp_6d_01.npy', result_decomp)
+np.save('result_local_6d_01.npy', result_combine)
 
-print('The total number of points: ', true_final.shape[0]*true_final.shape[1]*true_final.shape[2]*true_final.shape[3]*true_final.shape[4]*true_final.shape[5])  
+# print('The total number of points: ', true_final.shape[0]*true_final.shape[1]*true_final.shape[2]*true_final.shape[3]*true_final.shape[4]*true_final.shape[5])  
 print('The number of points getting locally updated: ', indice.shape)
-print('Original number of points with different values: ', np.argwhere(abs(decomp_final-true_final)>1e-6).shape)
-print('The number of points with different values after local updating: ', np.argwhere(abs(result_combine-true_final)>1e-6).shape)
+# print('Original number of points with different values: ', np.argwhere(abs(decomp_final-true_final)>1e-6).shape)
+# print('The number of points with different values after local updating: ', np.argwhere(abs(result_combine-true_final)>1e-6).shape)
 
-count = true_final.shape[0]*true_final.shape[1]
+# count = true_final.shape[0]*true_final.shape[1]
 
-diff_decomp = np.sum(result_diff) / count
-diff_corrected = np.sum(result_combine - true_final) / count
-print('The average error between direct computation and decomposition: ', diff_decomp)
-print('The average error between direct computation and local updates: ', diff_corrected)
+# diff_decomp = np.sum(result_diff) / count
+# diff_corrected = np.sum(result_combine - true_final) / count
+# print('The average error between direct computation and decomposition: ', diff_decomp)
+# print('The average error between direct computation and local updates: ', diff_corrected)
 
-diff_decomp = np.sum(abs(result_diff)) / count
-diff_corrected = np.sum(abs(result_combine - true_final)) / count
-print('The average absolute error between direct computation and decomposition: ', diff_decomp)
-print('The average absolute error between direct computation and local updates: ', diff_corrected)
+# diff_decomp = np.sum(abs(result_diff)) / count
+# diff_corrected = np.sum(abs(result_combine - true_final)) / count
+# print('The average absolute error between direct computation and decomposition: ', diff_decomp)
+# print('The average absolute error between direct computation and local updates: ', diff_corrected)
 
-diff_decomp_max = np.max(abs(result_diff))
-diff_corrected_max = np.max(abs(result_combine - true_final))
-print('The maximum absolute error between direct computation and decomposition: ', diff_decomp_max)
-print('The maximum absolute error between direct computation and local updates: ', diff_corrected_max)
+# diff_decomp_max = np.max(abs(result_diff))
+# diff_corrected_max = np.max(abs(result_combine - true_final))
+# print('The maximum absolute error between direct computation and decomposition: ', diff_decomp_max)
+# print('The maximum absolute error between direct computation and local updates: ', diff_corrected_max)
