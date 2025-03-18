@@ -1,3 +1,4 @@
+import argparse
 from direct_numpy import direct_computation_old, direct_computation
 from decomposition_numpy import decomposition, decomposition_old, DecompositionResult
 
@@ -28,27 +29,48 @@ np.set_printoptions(threshold=py_sys.maxsize)
 np.set_printoptions(precision=5)
 
 
-def initConfig() -> Config:
-    return Config(
-        number_of_grid_points=101,
-        # number_of_grid_points=501,
-        lookback_length=0.20,
-        time_step=0.02,
-        small_number=1e-5,
+def initConfig(use_union=False) -> Config:
+    if use_union:
+        sys_2d=couple_u(
+            x=[0, 0],
+            uMax=1,
+            dMax=0.0,
+            uMode="max",
+            dMode="min",
+        )
+        subsys_1d=subsys(
+            x=[0],
+            uMax=1,
+            dMax=0.0,
+            uMode="max",
+            dMode="min",
+        )
+    else:
         sys_2d=couple_u(
             x=[0, 0],
             uMax=1,
             dMax=0.0,
             uMode="min",
             dMode="min",
-        ),
+        )
         subsys_1d=subsys(
             x=[0],
             uMax=1,
             dMax=0.0,
             uMode="min",
             dMode="min",
-        ),
+        )
+
+    return Config(
+        number_of_grid_points=101,
+        # number_of_grid_points=501,
+        lookback_length=0.20,
+        time_step=0.02,
+        small_number=1e-5,
+        sys_2d=sys_2d,
+        subsys_1d=subsys_1d,
+        use_union=use_union,
+        threshold2=1e-6,
     )
 
 def plotArray(array, show=True):
@@ -202,6 +224,10 @@ def printCorrectnessStatistics(
     print(
         f"The maximum absolute error between direct computation and local updates: {diff_corrected_max:0.10f}"
     )
+
+    print("Number of values with error:")
+    compareArrays(array1=direct_computation_final,
+                  array2=decomp_final_correct)
 
 class IterStats:
     def __init__(self, iteration,
@@ -373,8 +399,6 @@ class CorrectionBasedOnLocalUpdate:
 
     """
     def doCorrection(self, debug=False):
-        pass
-
         if debug:
             print("================================================")
             print("START doCorrection")
@@ -399,8 +423,9 @@ class CorrectionBasedOnLocalUpdate:
         start_time = time.time()
 
         for i in range(1, len(tau)):
+            ###### INIT FOR EACH TIME STEP ######
+            
             t = np.array([curr_tau, tau[i]])
-
             curr_result_upper = subsystem1_data_all_timesteps[i]
             curr_result_lower = subsystem2_data_all_timesteps[i]
             curr_result = result_combined_all_timesteps[i]
@@ -408,14 +433,18 @@ class CorrectionBasedOnLocalUpdate:
             curr_result_true = self._true_result[i]
             total_indices_corrected = 0
 
+            # Compute threshold big delta in Algorithm 1
             threshold = self.getThreshold(curr_result, prev_result)
             if debug:
                 print(f"threshold:{threshold}")
+
 
             curr_time = time.time()
             init_time = time.time() - start_time
             start_time = curr_time
             
+            ###### IDENTIFY INDICES TO CORRECT ######
+
             new_indices_to_correct = self.getNewPointsToCorrect(
                 curr_result_upper, curr_result_lower, threshold
             )
@@ -424,12 +453,12 @@ class CorrectionBasedOnLocalUpdate:
             identification_time = time.time() - start_time
             start_time = curr_time
 
+            ###### CORRECTION 1: CORRECT THE IDENTIFIED INDICES  ######
+
             for index in new_indices_to_correct:
                 self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=frontier, time_step=i)
                 total_indices_corrected += 1
-                # TODO: Check if we need to add the curr_result = new_value + prev_result
 
-            # print(f"curr_result_updated:\n{curr_result}")
             if debug:
                 print(f"new_indices_to_correct: {len(new_indices_to_correct)}")
                 print(f"Frontier: {frontier.count()}")
@@ -437,6 +466,8 @@ class CorrectionBasedOnLocalUpdate:
             curr_time = time.time()
             correction1_time = time.time() - start_time
             start_time = curr_time
+
+            ###### CORRECTION 2: RECURSIVELY CORRECT THE NGHS OF IDENTIFIED INDICES  ######
 
             while frontier.isEmpty() == False:
                 for index in frontier.activeIndices():
@@ -448,9 +479,6 @@ class CorrectionBasedOnLocalUpdate:
                 next_frontier.reset()
                 if debug:
                     print(f"Frontier: {frontier.count()}")            
-
-            # compareArrays(array1=curr_result_true,
-            #               array2=curr_result)
 
             result_combined_all_timesteps[i] = curr_result
             curr_time = time.time()
@@ -488,7 +516,7 @@ class CorrectionBasedOnLocalUpdate:
         return max
 
     def threshold2(self):
-        return 10e-6
+        return self._config._threshold2
     
     def prevIndex(self, index):
         x = index[0]
@@ -549,9 +577,22 @@ def compareArrays(array1, array2, number_of_precision_points=8, debug=False):
 
 def main():
     # Initializtion
-    config = initConfig()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--use_union", 
+                        help = "Set this argument 0 if you do not want to use union. Otherwise, set it to 1", 
+                        nargs="?",
+                        default=int,
+                        const="",
+                        type=int,
+                        )
+    args = parser.parse_args()
+    use_union: bool = bool(args.use_union)
+    print(f"use_union: {use_union}")
+
+    config = initConfig(use_union=use_union)
     print(f"Grid size: {config._number_of_grid_points} x {config._number_of_grid_points}")
     print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
+    print(f"Threshold2: {config._threshold2}")
 
     # Perform direct computation and decomposition
     grid, result_true = direct_computation(

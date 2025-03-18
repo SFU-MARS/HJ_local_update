@@ -177,11 +177,6 @@ def decomposition(config: Config, saveAllTimeStep=True, debug=False):
     list_x = np.reshape(g.vs[0], g.pts_each_dim[0])
     data_change = np.zeros(tuple(g.pts_each_dim))
 
-    # print(f"grid: {g.vs}")
-    # print(f"data_sub: {data_sub}")
-    # print(f"list_x: {list_x}")
-    # print(f"data_change: {data_change}")
-
     # Set computation task and compute HJ PDE
     """
     Computation in subsystems
@@ -233,6 +228,7 @@ def decomposition(config: Config, saveAllTimeStep=True, debug=False):
             result_upper=data_sub,
             result_lower=data_sub,
             number_of_grid_points=config._number_of_grid_points,
+            use_union=config._use_union,
         )
     else:
         result_full, result_upper, result_lower = (
@@ -240,6 +236,7 @@ def decomposition(config: Config, saveAllTimeStep=True, debug=False):
                 result_upper_list=data_list,
                 result_lower_list=data_list,
                 number_of_grid_points=config._number_of_grid_points,
+                use_union=config._use_union,
             )
         )
         pass
@@ -253,7 +250,7 @@ def decomposition(config: Config, saveAllTimeStep=True, debug=False):
     return decomposition_result
 
 
-def combine_subsystem_results(result_upper, result_lower, number_of_grid_points):
+def combine_subsystem_results(result_upper, result_lower, number_of_grid_points, use_union):
     result_upper_flip = np.flip(result_upper, axis=0)
     result_upper_expand = np.tile(result_upper_flip, (number_of_grid_points, 1))
     print(result_upper_expand.shape)
@@ -264,12 +261,15 @@ def combine_subsystem_results(result_upper, result_lower, number_of_grid_points)
     print(result_lower_expand.shape)
     result_lower = np.transpose(result_lower_expand, (0, 1))
 
-    result_full = np.maximum(result_upper, result_lower)
+    if use_union:
+        result_full = np.minimum(result_upper, result_lower)
+    else:
+        result_full = np.maximum(result_upper, result_lower)
     return result_full, result_upper, result_lower
 
 
 def combine_subsystem_results_all_time_steps(
-    result_upper_list, result_lower_list, number_of_grid_points
+    result_upper_list, result_lower_list, number_of_grid_points, use_union,
 ):
 
     result_upper_flip = np.flip(result_upper_list, axis=0)
@@ -283,5 +283,8 @@ def combine_subsystem_results_all_time_steps(
     # print(result_lower_expand.shape)
     result_lower = np.transpose(result_lower_expand, (1, 0, 2))
     # print(result_lower.shape)
-    result_full = np.maximum(result_upper, result_lower)
+    if use_union:
+        result_full = np.minimum(result_upper, result_lower)
+    else:
+        result_full = np.maximum(result_upper, result_lower)
     return result_full, result_upper, result_lower

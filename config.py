@@ -15,6 +15,8 @@ class Config:
         small_number: float,
         subsys_1d: subsys,
         sys_2d: couple_u,
+        use_union: bool,
+        threshold2:float,
     ) -> None:
         self._lookback_length = lookback_length
         self._number_of_grid_points = number_of_grid_points
@@ -25,6 +27,8 @@ class Config:
         )
         self._sys_2d = sys_2d
         self._subsys_1d = subsys_1d
+        self._use_union = use_union
+        self._threshold2 = threshold2
 
     def value_function_1d(self, grid: Grid):
         return ShapeRectangle(grid, [-1.0], [1.0])
