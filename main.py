@@ -15,7 +15,7 @@ import plotly.express as px
 
 from odp.Grid import Grid
 from odp.Shapes import *
-from config import Config, construct2DGrid
+from config import Config, construct2DGrid, Frontier
 from system import couple_u
 from subsystem import subsys
 
@@ -25,15 +25,15 @@ from update_V_numpy import spa_derivX, spa_derivY
 import time
 
 np.set_printoptions(threshold=py_sys.maxsize)
-np.set_printoptions(precision=4)
+np.set_printoptions(precision=5)
 
 
 def initConfig() -> Config:
     return Config(
         # number_of_grid_points=101,
-        number_of_grid_points=11,
-        lookback_length=0.2,
-        time_steps=0.02,
+        number_of_grid_points=101,
+        lookback_length=0.20,
+        time_step=0.02,
         small_number=1e-5,
         sys_2d=couple_u(
             x=[0, 0],
@@ -80,7 +80,7 @@ def correctionBasedOnDirectComputation(
     # Initialize from config
     grid = construct2DGrid(number_of_grid_points=config._number_of_grid_points)
     data_init = config.value_function_2d(grid=grid)
-    t_step = config._time_steps
+    t_step = config._time_step
     tau = config._tau
     sys = config._sys_2d
 
@@ -219,67 +219,231 @@ def process_stats(true_final, decomp_final, corrected_result, number_of_points_u
     )
 
 
-def correctionBasedOnLocalUpdate(
-    decomposition_result: DecompositionResult, config: Config
-):
-    """
-    def recompute_value(point, prev_combined_result):
-        # use prev_combined result to recompute point
-        old_val = point.value()
-        new_val = point.recompute(prev_combined_result)
-        flag = false
-        if new_value - old_value > threshold2:
-            flag = true
+class CorrectionBasedOnLocalUpdate:
+    def __init__(
+        self,
+        decomposition_result: DecompositionResult,
+        true_result,
+        config: Config,
+    ):
+        self._decomposition_result = decomposition_result
+        self._config = config
+        self._true_result = true_result
+        # grid data for current and previous timesteps
+        self.prev_data = None
+        self.current_data = None
+        self._grid = self._config.grid_2D()
+        self._sys = self._config._sys_2d
 
-        return point, flag
+        self._list_x1 = np.reshape(self._grid.vs[0], self._grid.pts_each_dim[0])
+        self._list_x2 = np.reshape(self._grid.vs[1], self._grid.pts_each_dim[1])
 
 
-    cumulative_points_to_correct = array of 0s based on the combined_result array.
-    new_points_to_correct = array of 0s based on the combined_result array.
-    for each time_step:
+    def recomputeValueChange(self, data, x, y, t):
+        # recompute value at index data[x][y] using the grid at timestep t
+        # Note: t is not being used in both opt_ctrl_numpy() and dynamics_numpy().
 
-        # rest frontier, new_points_to correct
+        # Get spatial derivative
+        dV_dx_L, dV_dx_R = spa_derivX(x, y, data, self._grid)
+        dV_dy_L, dV_dy_R = spa_derivY(x, y, data, self._grid)
 
-        # find the points to correct from lower and upper subsystem results
-        for each point:
-            if lower[point] - upper[point] < threshold:
-                new_points_to_correct[point] = 1
-                # add to cumulative_points_to_correct
-                # Optimize this stuff
-                cumulative_points_to_correct[point] = 1
+        # Get the average gradient
+        dV_dx = (dV_dx_L + dV_dx_R) / 2
+        dV_dy = (dV_dy_L + dV_dy_R) / 2
 
-        # for all points to be recomputed, recompute them.
-        for point in cumulative_points_to_correct:
-            flag, point = recompute_value(point, prev_combined_result)
-            # Optimize this stuff: can we maintain the border and only check frontier for the border vertices?
-            if flag:
-                # should recompute the neighbors also.
-                frontier[point] = 1
+        # Get the dynamical rates of change
+        uOpt = self._sys.opt_ctrl_numpy(t, [self._list_x1[x], self._list_x2[y]], [dV_dx, dV_dy])
+        dx_dt, dy_dt = self._sys.dynamics_numpy(t, [self._list_x1[x], self._list_x2[y]], uOpt, 0)
 
-        #
-        while frontier is not empty:
-            # should check neighbors of all points in fronier
-            for point in frontier:
-                for neighbor of point:
-                    if cumulative_points_to_correct[neighbor] is False:
-                        new_points_to_correct[neighbor] = 1
+        # Updating the value function
+        data_change = dx_dt * dV_dx + dy_dt * dV_dy
+        data_change = data_change*self._config._time_step
+        return data_change
+    
+    def updateValue(self, curr_result, prev_result, index, frontier, time_step) -> bool:
+        x = index[0]
+        y = index[1]
+        new_value_change = self.recomputeValueChange(data=prev_result, x=x, y=y, t=time_step,)
+        old_value = curr_result[x][y]
+        new_value = new_value_change + prev_result[x][y]
+        curr_result[x][y] = new_value
 
-            # reset frontier for next iteration
-            for point in new_points_to_correct:
-                new_points_to_correct[point] = 0
-                flag, point = recompute_value(point, prev_combined_result)
+        flag = False
+        if abs(old_value - new_value) > self.threshold2():
+            flag = True
+            frontier.add(self.prevIndex(index=index))
+            frontier.add(self.nextIndex(index=index))
 
-                if flag:
-                    # mark this point for corrections in all future time steps
+        # print(f"[{x}][{y}]: {round(old_value, ndigits=4)} -> {round(new_value, ndigits=4)}, {flag}")
+        return flag
+
+
+    def doCorrection(self, debug=True):
+        """
+        cumulative_points_to_correct = array of 0s based on the combined_result array.
+        new_points_to_correct = array of 0s based on the combined_result array.
+        for each time_step:
+
+            # reset frontier, new_points_to_correct to all false
+
+            # find the points to correct from lower and upper subsystem results
+            for each point:
+                if lower[point] - upper[point] < threshold:
+                    new_points_to_correct[point] = 1
+                    # add to cumulative_points_to_correct
+                    # Optimize this stuff
                     cumulative_points_to_correct[point] = 1
 
-                    # add it to frontier and check its neighbors
+            # for all points to be recomputed, recompute them.
+            for point in cumulative_points_to_correct:
+                flag, point = recompute_value(point, prev_combined_result)
+                # Optimize this stuff: can we maintain the border and only check frontier for the border vertices?
+                if flag:
+                    # should recompute the neighbors also.
                     frontier[point] = 1
 
-    """
-    pass
+            #
+            while frontier is not empty:
+                # should check neighbors of all points in fronier
+                for point in frontier:
+                    for neighbor of point:
+                        # if cumulative_points_to_correct[neighbor] is False:
+                            new_points_to_correct[neighbor] = 1
 
+                # reset frontier for next iteration
+                for point in new_points_to_correct:
+                    new_points_to_correct[point] = 0
+                    frontier[point] = 0
+                    flag, point = recompute_value(point, prev_combined_result)
 
+                    if flag:
+                        # mark this point for corrections in all future time steps
+                        cumulative_points_to_correct[point] = 1
+
+                        # add it to frontier and check its neighbors
+                        frontier[point] = 1
+
+        """
+        pass
+
+        print("================================================")
+        print("START doCorrection")
+        result_combined_all_timesteps = self._decomposition_result.combined()
+        subsystem1_data_all_timesteps = self._decomposition_result.subsystem1()
+        subsystem2_data_all_timesteps = self._decomposition_result.subsystem2()
+
+        combined_data_prev = result_combined_all_timesteps[0]
+
+        # print(f"combined_data_prev: \n{combined_data_prev}")
+
+        # frontier :set(int, int) = np.full(combined_data_prev.shape, False, dtype=bool)
+        frontier = Frontier(x=combined_data_prev.shape[0],
+                            y=combined_data_prev.shape[1])
+        next_frontier = Frontier(x=combined_data_prev.shape[0],
+                            y=combined_data_prev.shape[1])
+        
+        cumulative_Frontier = Frontier(x=combined_data_prev.shape[0],
+                            y=combined_data_prev.shape[1])
+        time_step = self._config._time_step
+        small_number = self._config._small_number
+        tau = self._config._tau
+
+        curr_time = tau[0]
+
+        for i in range(1, len(tau)):
+            t = np.array([curr_time, tau[i]])
+
+            curr_result_upper = subsystem1_data_all_timesteps[i]
+            curr_result_lower = subsystem2_data_all_timesteps[i]
+            curr_result = result_combined_all_timesteps[i]
+            prev_result = result_combined_all_timesteps[i - 1]
+            curr_result_true = self._true_result[i]
+
+            threshold = self.getThreshold(curr_result, prev_result)
+            print(f"threshold:{threshold}")
+            # print(f"prev_result:\n{prev_result}")
+            # print(f"curr_result:\n{curr_result}")
+            # print(f"curr_result_true:\n{curr_result_true}")
+
+            new_indices_to_correct = self.getNewPointsToCorrect(
+                curr_result_upper, curr_result_lower, threshold
+            )
+
+            for index in new_indices_to_correct:
+                self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=frontier, time_step=i)
+                # TODO: Check if we need to add the curr_result = new_value + prev_result
+
+            # print(f"curr_result_updated:\n{curr_result}")
+            print(f"new_indices_to_correct: {len(new_indices_to_correct)}")
+            print(f"Frontier: {frontier.count()}")
+            
+            while frontier.isEmpty() == False:
+                for index in frontier.activeIndices():
+                    # Update frontier vertex and check if its nghs need to be added to the next_frontier
+                    self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=next_frontier, time_step=i)
+                    pass
+                
+                frontier, next_frontier = next_frontier, frontier
+                next_frontier.reset()
+                print(f"Frontier: {frontier.count()}")            
+
+            # compareArrays(array1=curr_result_true,
+            #               array2=curr_result)
+
+            result_combined_all_timesteps[i] = curr_result
+            print("----------------------------------------------------")
+
+        print("================================================")
+        print("END doCorrection")
+
+    def getThreshold(self, curr_result_combined, prev_result_combined):
+        diff = curr_result_combined - prev_result_combined
+        max = np.max(abs(diff))
+        # print("prev_result_combined:")
+        # print(prev_result_combined)
+        # print("curr_result_combined:")
+        # print(curr_result_combined)
+        # print("diff:")
+        # print(diff)
+        # print("max:")
+        # print(max)
+        return max
+
+    def threshold2(self):
+        return 10e-6
+    
+    def prevIndex(self, index):
+        x = index[0]
+        y = index[1]
+        max_index = self._config._number_of_grid_points
+        y = (y-1) % max_index
+        prev_index = (x, y)
+        # print(f"prevIndex of {index} = {prev_index}")
+        return prev_index
+        
+    def nextIndex(self, index):
+        x = index[0]
+        y = index[1]
+        max_index = self._config._number_of_grid_points
+        y = (y+1) % max_index
+        next_index = (x, y)
+        # print(f"nextIndex of {index} = {next_index}")
+        return next_index
+        
+    
+    def getNewPointsToCorrect(self, result_upper, result_lower, threshold):
+        result_diff = abs(result_upper - result_lower)
+
+        # Get new_points_to_correct =
+        indices_to_correct = np.argwhere(result_diff < threshold)
+        # print(f"result_upper: \n{result_upper}")
+        # print(f"result_lower: \n{result_lower}")
+        # print(f"result_diff: \n{result_diff}")
+
+        # print(f"indices_to_correct: \n{indices_to_correct}")
+        return indices_to_correct
+    
+    
 def printResults(result_list):
     # a list of result arrays
     i = 0
@@ -291,21 +455,16 @@ def printResults(result_list):
 
 
 def compareArrays(array1, array2, number_of_precision_points=8, debug=False):
-    diffArray = abs(array1 - array2)
+    diff_array = abs(array1 - array2)
     if debug:
-        print("array1")
-        print(array1)
-        print("---------------------")
-        print("array2")
-        print(array2)
-        print("---------------------")
-        print("diff_array")
-        print(diffArray)
+        print(f"array1: \n{array1}")
+        print(f"array2: \n{array2}")
+        print(f"diff_array: \n{diff_array}")
 
     for precision in range(1, number_of_precision_points):
         precision_value = 1 / (10**precision)
         number_of_entires_with_error = len(
-            np.argwhere(abs(diffArray) > precision_value)
+            np.argwhere(abs(diff_array) > precision_value)
         )
         # print(f"1e-{precision}: {precision_value} {number_of_entires_with_error}")
         print(f"{precision_value}: {number_of_entires_with_error}")
@@ -327,11 +486,11 @@ def main():
     #     saveAllTimeStep=True,
     #     lookback_length=config._lookback_length,
     # )
-    result_decomp_old = decomposition_old(
-        config._number_of_grid_points,
-        saveAllTimeStep=True,
-        lookback_length=config._lookback_length,
-    )
+    # result_decomp_old = decomposition_old(
+    #     config._number_of_grid_points,
+    #     saveAllTimeStep=True,
+    #     lookback_length=config._lookback_length,
+    # )
     decomposition_result: DecompositionResult = decomposition(
         config=config,
         saveAllTimeStep=True,
@@ -342,29 +501,39 @@ def main():
 
     true_final = result_true[-1]
     decomp_final = decomposition_result.combined()[-1]
-    decomp_final_old = result_decomp_old[-1]
+    # decomp_final_old = result_decomp_old[-1]
     result_diff = decomp_final - true_final
 
-    # print("comparing decomposition_old and decomposition")
-    # count = 0
-    # for x, y in zip(result_decomp_old, decomposition_result.combined()):
-    #     # result_diff2 = decomp_final - decomp_final_old
-    #     print(f"Timestep: {count}")
-    #     count += 1
-    #     compareArrays(x, y)
-    #     print("-----------------------------------")
-    #     # exit(1)
-    #     # plotArray(result_diff2)
+    print("comparing decomposition_old and decomposition")
+    count = 0
+    for x, y in zip(result_true, decomposition_result.combined()):
+        # result_diff2 = decomp_final - decomp_final_old
+        print(f"Timestep: {count}")
+        count += 1
+        compareArrays(x, y)
+        print("-----------------------------------")
+        # exit(1)
+        # plotArray(result_diff2)
 
-    print("comparing decomp_final and true_final")
-    compareArrays(decomp_final, true_final)
+    # print("comparing decomp_final and true_final")
+    # compareArrays(decomp_final, true_final, debug=True)
 
-    correctionBasedOnDirectComputation(
-        true_final=true_final,
-        result_decomp=decomposition_result.combined(),
+    # correctionBasedOnDirectComputation(
+    #     true_final=true_final,
+    #     result_decomp=decomposition_result.combined(),
+    #     config=config,
+    # )
+
+    localUpdate = CorrectionBasedOnLocalUpdate(
+        decomposition_result=decomposition_result, 
+        true_result=result_true,
         config=config,
     )
+    localUpdate.doCorrection()
 
+    compareArrays(array1=decomposition_result.combined()[-1],
+                  array2=result_true[-1])
+    
 
 if __name__ == "__main__":
     main()

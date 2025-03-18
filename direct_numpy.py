@@ -110,7 +110,7 @@ def direct_computation(config: Config, saveAllTimeStep, debug=False):
 
     ## Get initial values from config
     num = config._number_of_grid_points
-    t_step = config._time_steps
+    t_step = config._time_step
     small_number = config._small_number
     tau = config._tau
     sys = config._sys_2d

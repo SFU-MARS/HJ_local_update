@@ -28,6 +28,12 @@ class DecompositionResult:
     def combined(self):
         return self._combined_results
 
+    def subsystem1(self):
+        return self._upper_subsystem_results
+
+    def subsystem2(self):
+        return self._lower_subsystem_results
+
 
 def decomposition_old(num, saveAllTimeStep=True, lookback_length=0.02, debug=False):
 
@@ -163,7 +169,7 @@ def decomposition(config: Config, saveAllTimeStep=True, debug=False):
     data_sub = config.value_function_1d(grid=g)
     # Set 1D system dynamics
     sys = config._subsys_1d
-    t_step = config._time_steps
+    t_step = config._time_step
     small_number = config._small_number
     tau = config._tau
 
@@ -223,23 +229,25 @@ def decomposition(config: Config, saveAllTimeStep=True, debug=False):
     """
 
     if not saveAllTimeStep:
-        result_full = combine_subsystem_results(
+        result_full, result_upper, result_lower = combine_subsystem_results(
             result_upper=data_sub,
             result_lower=data_sub,
             number_of_grid_points=config._number_of_grid_points,
         )
     else:
-        result_full = combine_subsystem_results_all_time_steps(
-            result_upper_list=data_list,
-            result_lower_list=data_list,
-            number_of_grid_points=config._number_of_grid_points,
+        result_full, result_upper, result_lower = (
+            combine_subsystem_results_all_time_steps(
+                result_upper_list=data_list,
+                result_lower_list=data_list,
+                number_of_grid_points=config._number_of_grid_points,
+            )
         )
         pass
 
     decomposition_result = DecompositionResult(
+        upper_subsystem_results=result_upper,
+        lower_subsystem_results=result_lower,
         combined_results=result_full,
-        lower_subsystem_results=data_list,
-        upper_subsystem_results=data_list,
     )
 
     return decomposition_result
@@ -257,7 +265,7 @@ def combine_subsystem_results(result_upper, result_lower, number_of_grid_points)
     result_lower = np.transpose(result_lower_expand, (0, 1))
 
     result_full = np.maximum(result_upper, result_lower)
-    return result_full
+    return result_full, result_upper, result_lower
 
 
 def combine_subsystem_results_all_time_steps(
@@ -276,4 +284,4 @@ def combine_subsystem_results_all_time_steps(
     result_lower = np.transpose(result_lower_expand, (1, 0, 2))
     # print(result_lower.shape)
     result_full = np.maximum(result_upper, result_lower)
-    return result_full
+    return result_full, result_upper, result_lower
