@@ -109,6 +109,7 @@ def direct_computation(config: Config, saveAllTimeStep, debug=False):
     print("================================================")
 
     ## Get initial values from config
+    print(f"use_union: {config._use_union}")
     num = config._number_of_grid_points
     t_step = config._time_step
     small_number = config._small_number

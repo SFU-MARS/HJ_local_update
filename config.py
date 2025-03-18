@@ -34,7 +34,13 @@ class Config:
         return ShapeRectangle(grid, [-1.0], [1.0])
 
     def value_function_2d(self, grid: Grid):
-        return ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
+        if self._use_union:
+            data_1 = ShapeRectangle(grid, [-5.0, -1.0], [5.0, 1.0])
+            data_2 = ShapeRectangle(grid, [-1.0, -5.0], [1.0, 5.0])
+            data =np.minimum(data_1, data_2)
+            return data
+        else:
+            return ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
     
     def grid_2D(self):
         return construct2DGrid(number_of_grid_points=self._number_of_grid_points)
