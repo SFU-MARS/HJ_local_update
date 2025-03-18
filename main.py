@@ -3,7 +3,7 @@ from decomposition_numpy import decomposition, decomposition_old, DecompositionR
 
 import numpy as np
 import heterocl as hcl
-
+import copy
 # import cv2
 import sys as py_sys
 
@@ -55,7 +55,6 @@ def plotArray(array, show=True):
     fig = px.imshow(array)
     if show:
         fig.show()
-
 
 def correctionBasedOnDirectComputation(
     true_final, result_decomp, config: Config, debug=False
@@ -160,15 +159,9 @@ def correctionBasedOnDirectComputation(
         print(result_combine)
         compareArrays(result_combine, true_final)
 
-    process_stats(
-        true_final=true_final,
-        decomp_final=decomp_final,
-        corrected_result=result_combine,
-        number_of_points_updated=indice.shape,
-    )
-
-
-def process_stats(true_final, decomp_final, corrected_result, number_of_points_updated):
+def printCorrectnessStatistics(
+        direct_computation_results, decomposition_results:DecompositionResult, corrected_decomposition_results:DecompositionResult, 
+        ):
     print("Processing stats")
     print("================================================")
 
@@ -176,45 +169,38 @@ def process_stats(true_final, decomp_final, corrected_result, number_of_points_u
     Comparision with direct computation
     """
     # plot_overlay_set(grid, true_final, decomp_final, result_combine, po)
-    result_diff = decomp_final - true_final
+    direct_computation_final = direct_computation_results[-1]
+    decomp_final = decomposition_results.combined()[-1]
+    decomp_final_correct = corrected_decomposition_results.combined()[-1]
 
-    print(f"The total number of points: {true_final.shape[0] * true_final.shape[1]}")
+    print(f"The total number of points: {direct_computation_final.shape[0] * direct_computation_final.shape[1]}")
     print(
-        f"Original number of points with different values: {np.argwhere(abs(decomp_final - true_final) > 1e-6).shape}"
-    )
-    print(f"The number of points getting locally updated: {number_of_points_updated}")
-    print(
-        f"The number of points with different values after local updating: {np.argwhere(abs(corrected_result - true_final) > 1e-6).shape}"
-    )
-
-    count = true_final.shape[0] * true_final.shape[1]
-
-    # diff_decomp = np.sum(result_diff) / count
-    # diff_corrected = np.sum(corrected_result - true_final) / count
-    # print(
-    #     "The average error between direct computation and decomposition: ", diff_decomp
-    # )
-    # print(
-    #     "The average error between direct computation and local updates: ",
-    #     diff_corrected,
-    # )
-
-    diff_decomp = np.sum(abs(result_diff)) / count
-    diff_corrected = np.sum(abs(corrected_result - true_final)) / count
-    print(
-        f"The average absolute error between direct computation and decomposition: {diff_decomp:0.4f}"
+        f"Original number of points with different values: {np.argwhere(abs(decomp_final - direct_computation_final) > 1e-6).shape}"
     )
     print(
-        f"The average absolute error between direct computation and local updates: {diff_corrected:0.4f}"
+        f"Decomposition method: Number of points with different values (1e-6): {np.argwhere(abs(decomp_final - direct_computation_final) > 1e-6).shape}"
+    )
+    print(
+        f"After local update, Number of points with different values (1e-6): {np.argwhere(abs(decomp_final_correct - direct_computation_final) > 1e-6).shape}"
     )
 
-    diff_decomp_max = np.max(abs(result_diff))
-    diff_corrected_max = np.max(abs(corrected_result - true_final))
+    total_num_of_points = direct_computation_final.shape[0] * direct_computation_final.shape[1]
+    diff_decomp = np.sum(abs(decomp_final - direct_computation_final)) / total_num_of_points
+    diff_corrected = np.sum(abs(decomp_final_correct - direct_computation_final)) / total_num_of_points
     print(
-        f"The maximum absolute error between direct computation and decomposition: {diff_decomp_max:0.4f}"
+        f"The average absolute error between direct computation and decomposition: {diff_decomp:0.10f}"
     )
     print(
-        f"The maximum absolute error between direct computation and local updates: {diff_corrected_max:0.4f}"
+        f"The average absolute error between direct computation and local updates: {diff_corrected:0.10f}"
+    )
+
+    diff_decomp_max = np.max(abs(decomp_final - direct_computation_final))
+    diff_corrected_max = np.max(abs(decomp_final_correct - direct_computation_final))
+    print(
+        f"The maximum absolute error between direct computation and decomposition: {diff_decomp_max:0.10f}"
+    )
+    print(
+        f"The maximum absolute error between direct computation and local updates: {diff_corrected_max:0.10f}"
     )
 
 class IterStats:
@@ -564,6 +550,8 @@ def compareArrays(array1, array2, number_of_precision_points=8, debug=False):
 def main():
     # Initializtion
     config = initConfig()
+    print(f"Grid size: {config._number_of_grid_points} x {config._number_of_grid_points}")
+    print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
 
     # Perform direct computation and decomposition
     grid, result_true = direct_computation(
@@ -590,10 +578,9 @@ def main():
     # data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
     data_init = config.value_function_2d(grid=grid)
 
-    true_final = result_true[-1]
+    direct_computation_final = result_true[-1]
     decomp_final = decomposition_result.combined()[-1]
     # decomp_final_old = result_decomp_old[-1]
-    result_diff = decomp_final - true_final
 
     print("comparing decomposition_old and decomposition")
     count = 0
@@ -614,6 +601,7 @@ def main():
     #     result_decomp=decomposition_result.combined(),
     #     config=config,
     # )
+    decomposition_result_copy = copy.deepcopy(decomposition_result)
 
     local_update = CorrectionBasedOnLocalUpdate(
         decomposition_result=decomposition_result, 
@@ -625,6 +613,12 @@ def main():
     correction_time = time.time() - start
     local_update.printStats()
     print(f"Total correction time: {round(correction_time,ndigits=4)} seconds")
+
+    printCorrectnessStatistics(
+        direct_computation_results=result_true,
+        decomposition_results=decomposition_result_copy,
+        corrected_decomposition_results=decomposition_result,
+    )
 
     # compareArrays(array1=decomposition_result.combined()[-1],
     #               array2=result_true[-1])
