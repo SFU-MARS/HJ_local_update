@@ -30,8 +30,8 @@ np.set_printoptions(precision=5)
 
 def initConfig() -> Config:
     return Config(
-        # number_of_grid_points=101,
         number_of_grid_points=101,
+        # number_of_grid_points=501,
         lookback_length=0.20,
         time_step=0.02,
         small_number=1e-5,
@@ -50,7 +50,6 @@ def initConfig() -> Config:
             dMode="min",
         ),
     )
-
 
 def plotArray(array, show=True):
     fig = px.imshow(array)
@@ -218,7 +217,68 @@ def process_stats(true_final, decomp_final, corrected_result, number_of_points_u
         f"The maximum absolute error between direct computation and local updates: {diff_corrected_max:0.4f}"
     )
 
+class IterStats:
+    def __init__(self, iteration,
+                 num_of_indices_to_correct, 
+                 total_indices_corrected,
+                 init_time,
+                 identification_time,
+                 correction1_time,
+                 correction2_time,
+                 ):
+        self._iteration = iteration
+        self._num_of_indices_to_correct = num_of_indices_to_correct
+        self._total_indices_corrected = total_indices_corrected
+        self._init_time = init_time
+        self._identification_time = identification_time
+        self._correction1_time = correction1_time
+        self._correction2_time = correction2_time
+        self._total_time = init_time+identification_time+correction1_time+correction2_time
 
+    def printHeader(self):
+        print("iteration, "
+        "num_of_indices_to_correct, "
+        "total_indices_corrected,"
+        "init_time,"
+        "identification_time, "
+        "correction1_time, "
+        "correction2_time, "
+        "total_time"
+        )
+    
+    def printStats(self):
+        print(f"{self._iteration}, "
+        f"{self._num_of_indices_to_correct}, "
+        f"{self._total_indices_corrected},"
+        f"{round(self._init_time, ndigits=4)},"
+        f"{round(self._identification_time, ndigits=4)}, "
+        f"{round(self._correction1_time, ndigits=4)}, "
+        f"{round(self._correction2_time, ndigits=4)}, "
+        f"{round(self._total_time, ndigits=4)}"
+        )
+
+class PerfStats:
+    def __init__(
+            self, 
+            decomposition_result: DecompositionResult,
+            true_result, 
+            config: Config,):
+        self._decomposition_result = decomposition_result
+        self._true_result = true_result
+        self._config = config
+        self._iter_stats:list[IterStats] = []
+
+    def addIterStat(self, iter_stat: IterStats):
+        self._iter_stats.append(iter_stat)
+
+    def printStats(self):
+        self.printIterStats()
+
+    def printIterStats(self):
+        self._iter_stats[0].printHeader();
+        for iter_stat in self._iter_stats:
+            iter_stat.printStats()
+        
 class CorrectionBasedOnLocalUpdate:
     def __init__(
         self,
@@ -227,8 +287,8 @@ class CorrectionBasedOnLocalUpdate:
         config: Config,
     ):
         self._decomposition_result = decomposition_result
-        self._config = config
         self._true_result = true_result
+        self._config = config
         # grid data for current and previous timesteps
         self.prev_data = None
         self.current_data = None
@@ -238,6 +298,10 @@ class CorrectionBasedOnLocalUpdate:
         self._list_x1 = np.reshape(self._grid.vs[0], self._grid.pts_each_dim[0])
         self._list_x2 = np.reshape(self._grid.vs[1], self._grid.pts_each_dim[1])
 
+        self._perf_stats = PerfStats(decomposition_result=decomposition_result,
+                                     true_result=true_result,
+                                     config=config,
+                                     )
 
     def recomputeValueChange(self, data, x, y, t):
         # recompute value at index data[x][y] using the grid at timestep t
@@ -277,124 +341,152 @@ class CorrectionBasedOnLocalUpdate:
         # print(f"[{x}][{y}]: {round(old_value, ndigits=4)} -> {round(new_value, ndigits=4)}, {flag}")
         return flag
 
+    """
+    cumulative_points_to_correct = array of 0s based on the combined_result array.
+    new_points_to_correct = array of 0s based on the combined_result array.
+    for each time_step:
 
-    def doCorrection(self, debug=True):
-        """
-        cumulative_points_to_correct = array of 0s based on the combined_result array.
-        new_points_to_correct = array of 0s based on the combined_result array.
-        for each time_step:
+        # reset frontier, new_points_to_correct to all false
 
-            # reset frontier, new_points_to_correct to all false
+        # find the points to correct from lower and upper subsystem results
+        for each point:
+            if lower[point] - upper[point] < threshold:
+                new_points_to_correct[point] = 1
+                # add to cumulative_points_to_correct
+                # Optimize this stuff
+                cumulative_points_to_correct[point] = 1
 
-            # find the points to correct from lower and upper subsystem results
-            for each point:
-                if lower[point] - upper[point] < threshold:
-                    new_points_to_correct[point] = 1
-                    # add to cumulative_points_to_correct
-                    # Optimize this stuff
+        # for all points to be recomputed, recompute them.
+        for point in cumulative_points_to_correct:
+            flag, point = recompute_value(point, prev_combined_result)
+            # Optimize this stuff: can we maintain the border and only check frontier for the border vertices?
+            if flag:
+                # should recompute the neighbors also.
+                frontier[point] = 1
+
+        #
+        while frontier is not empty:
+            # should check neighbors of all points in fronier
+            for point in frontier:
+                for neighbor of point:
+                    # if cumulative_points_to_correct[neighbor] is False:
+                        new_points_to_correct[neighbor] = 1
+
+            # reset frontier for next iteration
+            for point in new_points_to_correct:
+                new_points_to_correct[point] = 0
+                frontier[point] = 0
+                flag, point = recompute_value(point, prev_combined_result)
+
+                if flag:
+                    # mark this point for corrections in all future time steps
                     cumulative_points_to_correct[point] = 1
 
-            # for all points to be recomputed, recompute them.
-            for point in cumulative_points_to_correct:
-                flag, point = recompute_value(point, prev_combined_result)
-                # Optimize this stuff: can we maintain the border and only check frontier for the border vertices?
-                if flag:
-                    # should recompute the neighbors also.
+                    # add it to frontier and check its neighbors
                     frontier[point] = 1
 
-            #
-            while frontier is not empty:
-                # should check neighbors of all points in fronier
-                for point in frontier:
-                    for neighbor of point:
-                        # if cumulative_points_to_correct[neighbor] is False:
-                            new_points_to_correct[neighbor] = 1
-
-                # reset frontier for next iteration
-                for point in new_points_to_correct:
-                    new_points_to_correct[point] = 0
-                    frontier[point] = 0
-                    flag, point = recompute_value(point, prev_combined_result)
-
-                    if flag:
-                        # mark this point for corrections in all future time steps
-                        cumulative_points_to_correct[point] = 1
-
-                        # add it to frontier and check its neighbors
-                        frontier[point] = 1
-
-        """
+    """
+    def doCorrection(self, debug=False):
         pass
 
-        print("================================================")
-        print("START doCorrection")
+        if debug:
+            print("================================================")
+            print("START doCorrection")
         result_combined_all_timesteps = self._decomposition_result.combined()
         subsystem1_data_all_timesteps = self._decomposition_result.subsystem1()
         subsystem2_data_all_timesteps = self._decomposition_result.subsystem2()
 
         combined_data_prev = result_combined_all_timesteps[0]
 
-        # print(f"combined_data_prev: \n{combined_data_prev}")
-
-        # frontier :set(int, int) = np.full(combined_data_prev.shape, False, dtype=bool)
-        frontier = Frontier(x=combined_data_prev.shape[0],
-                            y=combined_data_prev.shape[1])
-        next_frontier = Frontier(x=combined_data_prev.shape[0],
-                            y=combined_data_prev.shape[1])
+        frontier = Frontier(x=self._config._number_of_grid_points,
+                            y=self._config._number_of_grid_points)
+        next_frontier = Frontier(x=self._config._number_of_grid_points,
+                            y=self._config._number_of_grid_points)
         
-        cumulative_Frontier = Frontier(x=combined_data_prev.shape[0],
-                            y=combined_data_prev.shape[1])
+        # cumulative_Frontier = Frontier(x=combined_data_prev.shape[0],
+        #                     y=combined_data_prev.shape[1])
         time_step = self._config._time_step
         small_number = self._config._small_number
         tau = self._config._tau
 
-        curr_time = tau[0]
+        curr_tau = tau[0]
+        start_time = time.time()
 
         for i in range(1, len(tau)):
-            t = np.array([curr_time, tau[i]])
+            t = np.array([curr_tau, tau[i]])
 
             curr_result_upper = subsystem1_data_all_timesteps[i]
             curr_result_lower = subsystem2_data_all_timesteps[i]
             curr_result = result_combined_all_timesteps[i]
             prev_result = result_combined_all_timesteps[i - 1]
             curr_result_true = self._true_result[i]
+            total_indices_corrected = 0
 
             threshold = self.getThreshold(curr_result, prev_result)
-            print(f"threshold:{threshold}")
-            # print(f"prev_result:\n{prev_result}")
-            # print(f"curr_result:\n{curr_result}")
-            # print(f"curr_result_true:\n{curr_result_true}")
+            if debug:
+                print(f"threshold:{threshold}")
 
+            curr_time = time.time()
+            init_time = time.time() - start_time
+            start_time = curr_time
+            
             new_indices_to_correct = self.getNewPointsToCorrect(
                 curr_result_upper, curr_result_lower, threshold
             )
 
+            curr_time = time.time()
+            identification_time = time.time() - start_time
+            start_time = curr_time
+
             for index in new_indices_to_correct:
                 self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=frontier, time_step=i)
+                total_indices_corrected += 1
                 # TODO: Check if we need to add the curr_result = new_value + prev_result
 
             # print(f"curr_result_updated:\n{curr_result}")
-            print(f"new_indices_to_correct: {len(new_indices_to_correct)}")
-            print(f"Frontier: {frontier.count()}")
-            
+            if debug:
+                print(f"new_indices_to_correct: {len(new_indices_to_correct)}")
+                print(f"Frontier: {frontier.count()}")
+
+            curr_time = time.time()
+            correction1_time = time.time() - start_time
+            start_time = curr_time
+
             while frontier.isEmpty() == False:
                 for index in frontier.activeIndices():
                     # Update frontier vertex and check if its nghs need to be added to the next_frontier
                     self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=next_frontier, time_step=i)
-                    pass
+                    total_indices_corrected += 1
                 
                 frontier, next_frontier = next_frontier, frontier
                 next_frontier.reset()
-                print(f"Frontier: {frontier.count()}")            
+                if debug:
+                    print(f"Frontier: {frontier.count()}")            
 
             # compareArrays(array1=curr_result_true,
             #               array2=curr_result)
 
             result_combined_all_timesteps[i] = curr_result
-            print("----------------------------------------------------")
+            curr_time = time.time()
+            correction2_time = time.time() - start_time
+            start_time = curr_time
 
-        print("================================================")
-        print("END doCorrection")
+            self._perf_stats.addIterStat(IterStats(
+                iteration=i,
+                num_of_indices_to_correct=len(new_indices_to_correct),
+                total_indices_corrected=total_indices_corrected,
+                init_time=init_time,
+                identification_time=identification_time,
+                correction1_time=correction1_time,
+                correction2_time=correction2_time,
+            ))
+            
+            if debug:
+                print("----------------------------------------------------")
+
+        if debug:
+            print("================================================")
+            print("END doCorrection")
 
     def getThreshold(self, curr_result_combined, prev_result_combined):
         diff = curr_result_combined - prev_result_combined
@@ -429,7 +521,6 @@ class CorrectionBasedOnLocalUpdate:
         next_index = (x, y)
         # print(f"nextIndex of {index} = {next_index}")
         return next_index
-        
     
     def getNewPointsToCorrect(self, result_upper, result_lower, threshold):
         result_diff = abs(result_upper - result_lower)
@@ -443,6 +534,8 @@ class CorrectionBasedOnLocalUpdate:
         # print(f"indices_to_correct: \n{indices_to_correct}")
         return indices_to_correct
     
+    def printStats(self):
+        self._perf_stats.printStats()
     
 def printResults(result_list):
     # a list of result arrays
@@ -452,7 +545,6 @@ def printResults(result_list):
         print(i)
         print(result)
         i += 1
-
 
 def compareArrays(array1, array2, number_of_precision_points=8, debug=False):
     diff_array = abs(array1 - array2)
@@ -468,7 +560,6 @@ def compareArrays(array1, array2, number_of_precision_points=8, debug=False):
         )
         # print(f"1e-{precision}: {precision_value} {number_of_entires_with_error}")
         print(f"{precision_value}: {number_of_entires_with_error}")
-
 
 def main():
     # Initializtion
@@ -506,14 +597,14 @@ def main():
 
     print("comparing decomposition_old and decomposition")
     count = 0
-    for x, y in zip(result_true, decomposition_result.combined()):
-        # result_diff2 = decomp_final - decomp_final_old
-        print(f"Timestep: {count}")
-        count += 1
-        compareArrays(x, y)
-        print("-----------------------------------")
-        # exit(1)
-        # plotArray(result_diff2)
+    # for x, y in zip(result_true, decomposition_result.combined()):
+    #     # result_diff2 = decomp_final - decomp_final_old
+    #     print(f"Timestep: {count}")
+    #     count += 1
+    #     compareArrays(x, y)
+    #     print("-----------------------------------")
+    #     # exit(1)
+    #     # plotArray(result_diff2)
 
     # print("comparing decomp_final and true_final")
     # compareArrays(decomp_final, true_final, debug=True)
@@ -524,16 +615,19 @@ def main():
     #     config=config,
     # )
 
-    localUpdate = CorrectionBasedOnLocalUpdate(
+    local_update = CorrectionBasedOnLocalUpdate(
         decomposition_result=decomposition_result, 
         true_result=result_true,
         config=config,
     )
-    localUpdate.doCorrection()
+    start = time.time()
+    local_update.doCorrection()
+    correction_time = time.time() - start
+    local_update.printStats()
+    print(f"Total correction time: {round(correction_time,ndigits=4)} seconds")
 
-    compareArrays(array1=decomposition_result.combined()[-1],
-                  array2=result_true[-1])
+    # compareArrays(array1=decomposition_result.combined()[-1],
+    #               array2=result_true[-1])
     
-
 if __name__ == "__main__":
     main()
