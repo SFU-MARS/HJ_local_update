@@ -18,6 +18,8 @@ class Config:
         use_union: bool,
         threshold2:float,
         use_optimization1: bool,
+        generate_big_delta: int,
+        big_delta: float,
     ) -> None:
         self._lookback_length = lookback_length
         self._number_of_grid_points = number_of_grid_points
@@ -31,6 +33,8 @@ class Config:
         self._use_union = use_union
         self._threshold2 = threshold2
         self._use_optimization1 = use_optimization1
+        self._generate_big_delta = generate_big_delta
+        self._big_delta = big_delta
 
     def value_function_1d(self, grid: Grid):
         return ShapeRectangle(grid, [-1.0], [1.0])
