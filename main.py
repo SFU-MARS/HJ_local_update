@@ -29,7 +29,8 @@ np.set_printoptions(threshold=py_sys.maxsize)
 np.set_printoptions(precision=5)
 
 
-def initConfig(use_union=False) -> Config:
+def initConfig(use_union: bool, 
+               grid_size: int) -> Config:
     if use_union:
         sys_2d=couple_u(
             x=[0, 0],
@@ -62,8 +63,7 @@ def initConfig(use_union=False) -> Config:
         )
 
     return Config(
-        number_of_grid_points=101,
-        # number_of_grid_points=501,
+        number_of_grid_points=grid_size,
         lookback_length=0.20,
         time_step=0.02,
         small_number=1e-5,
@@ -422,6 +422,11 @@ class CorrectionBasedOnLocalUpdate:
         curr_tau = tau[0]
         start_time = time.time()
 
+        threshold = self.getThreshold(result_combined_all_timesteps[0], result_combined_all_timesteps[-1])
+        if debug:
+            print(f"threshold:{threshold}")
+
+
         for i in range(1, len(tau)):
             ###### INIT FOR EACH TIME STEP ######
             
@@ -434,9 +439,9 @@ class CorrectionBasedOnLocalUpdate:
             total_indices_corrected = 0
 
             # Compute threshold big delta in Algorithm 1
-            threshold = self.getThreshold(curr_result, prev_result)
-            if debug:
-                print(f"threshold:{threshold}")
+            # threshold = self.getThreshold(curr_result, prev_result)
+            # if debug:
+            #     print(f"threshold:{threshold}")
 
 
             curr_time = time.time()
@@ -505,14 +510,10 @@ class CorrectionBasedOnLocalUpdate:
     def getThreshold(self, curr_result_combined, prev_result_combined):
         diff = curr_result_combined - prev_result_combined
         max = np.max(abs(diff))
-        # print("prev_result_combined:")
-        # print(prev_result_combined)
-        # print("curr_result_combined:")
-        # print(curr_result_combined)
-        # print("diff:")
-        # print(diff)
-        # print("max:")
-        # print(max)
+        return max
+
+    def getThresholdNewTheory(self, decomp_result_init, decomp_result_final):
+        max = np.max(abs(decomp_result_final - decomp_result_init))
         return max
 
     def threshold2(self):
@@ -581,16 +582,24 @@ def main():
     parser.add_argument("--use_union", 
                         help = "Set this argument 0 if you do not want to use union. Otherwise, set it to 1", 
                         nargs="?",
-                        default=int,
+                        default="0",
+                        const="",
+                        type=int,
+                        )
+    parser.add_argument("--grid_size", 
+                        help = "Size of the 2D grid", 
+                        nargs="?",
+                        default="101",
                         const="",
                         type=int,
                         )
     args = parser.parse_args()
     use_union: bool = bool(args.use_union)
+    grid_size: int = int(args.grid_size)
     print(f"use_union: {use_union}")
 
-    config = initConfig(use_union=use_union)
-    print(f"Grid size: {config._number_of_grid_points} x {config._number_of_grid_points}")
+    config = initConfig(use_union=use_union, grid_size=grid_size)
+    print(f"Grid size: {grid_size} x {grid_size}")
     print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
     print(f"Threshold2: {config._threshold2}")
 
