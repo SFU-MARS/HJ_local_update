@@ -295,7 +295,20 @@ class PerfStats:
         self._iter_stats[0].printHeader();
         for iter_stat in self._iter_stats:
             iter_stat.printStats()
-        
+
+    def totalPointsCorrected(self):
+        points_corrected = 0
+        for iter_stat in self._iter_stats:
+            points_corrected += iter_stat._total_indices_corrected            
+        return points_corrected
+    
+    def totalPointsIdentified(self):
+        points_identified = 0
+        for iter_stat in self._iter_stats:
+            points_identified += iter_stat._num_of_indices_to_correct
+        return points_identified
+
+
 class CorrectionBasedOnLocalUpdate:
     def __init__(
         self,
@@ -356,16 +369,24 @@ class CorrectionBasedOnLocalUpdate:
         flag = False
         if abs(old_value - new_value) > self.threshold2():
             flag = True
-            prev_index = self.prevIndex(index=index)
-            next_index = self.nextIndex(index=index)
+            prev_index_on_x = self.prevIndexOnX(index=index)
+            next_index_on_x = self.nextIndexOnX(index=index)
+            prev_index_on_y = self.prevIndexOnY(index=index)
+            next_index_on_y = self.nextIndexOnY(index=index)
             if self._config._use_optimization1:
-                if updated_points_curr.hasIndex(index=prev_index) is False:
-                    frontier.add(prev_index)
-                if updated_points_curr.hasIndex(index=next_index) is False:
-                    frontier.add(next_index)
+                if updated_points_curr.hasIndex(index=prev_index_on_x) is False:
+                    frontier.add(prev_index_on_x)
+                if updated_points_curr.hasIndex(index=next_index_on_x) is False:
+                    frontier.add(next_index_on_x)
+                if updated_points_curr.hasIndex(index=prev_index_on_y) is False:
+                    frontier.add(prev_index_on_y)
+                if updated_points_curr.hasIndex(index=next_index_on_y) is False:
+                    frontier.add(next_index_on_y)
             else:
-                frontier.add(prev_index)
-                frontier.add(next_index)
+                frontier.add(prev_index_on_x)
+                frontier.add(next_index_on_x)
+                frontier.add(prev_index_on_y)
+                frontier.add(next_index_on_y)
         return flag
 
     """
@@ -442,8 +463,6 @@ class CorrectionBasedOnLocalUpdate:
         curr_tau = tau[0]
         start_time = time.time()
 
-
-
         for i in range(1, len(tau)):
             ###### INIT FOR EACH TIME STEP ######
             
@@ -462,8 +481,6 @@ class CorrectionBasedOnLocalUpdate:
                 decomp_result_init= result_combined_all_timesteps[0], 
                 decomp_result_final = result_combined_all_timesteps[-1],)
             print(f"big_delta:{bigDelta}")
-
-            
 
             curr_time = time.time()
             init_time = time.time() - start_time
@@ -553,22 +570,36 @@ class CorrectionBasedOnLocalUpdate:
     def threshold2(self):
         return self._config._threshold2
     
-    def prevIndex(self, index):
+    def prevIndexOnX(self, index):
         x = index[0]
         y = index[1]
         max_index = self._config._number_of_grid_points
         y = (y-1) % max_index
         prev_index = (x, y)
-        # print(f"prevIndex of {index} = {prev_index}")
         return prev_index
         
-    def nextIndex(self, index):
+    def nextIndexOnX(self, index):
         x = index[0]
         y = index[1]
         max_index = self._config._number_of_grid_points
         y = (y+1) % max_index
         next_index = (x, y)
-        # print(f"nextIndex of {index} = {next_index}")
+        return next_index
+
+    def prevIndexOnY(self, index):
+        x = index[0]
+        y = index[1]
+        max_index = self._config._number_of_grid_points
+        x = (x-1) % max_index
+        prev_index = (x, y)
+        return prev_index
+        
+    def nextIndexOnY(self, index):
+        x = index[0]
+        y = index[1]
+        max_index = self._config._number_of_grid_points
+        x = (x+1) % max_index
+        next_index = (x, y)
         return next_index
     
     def getNewPointsToCorrect(self, result_upper, result_lower, bigDelta):
@@ -719,6 +750,8 @@ def main():
     correction_time = time.time() - start
     local_update.printStats()
     print(f"Total correction time: {round(correction_time,ndigits=4)} seconds")
+    print(f"Total points identified: {local_update._perf_stats.totalPointsIdentified()}")
+    print(f"Total points corrected: {local_update._perf_stats.totalPointsCorrected()}")
 
     printCorrectnessStatistics(
         direct_computation_results=result_true,

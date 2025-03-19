@@ -182,7 +182,7 @@ def direct_computation(config: Config, saveAllTimeStep, debug=False):
     # print('The shape of data list is: ', data_list.shape)
 
     print(f"Number of timesteps: {len(data_list)}")
-    print(f"Total kernel time: {execution_time:.4f} seconds")
+    print(f"Direct computation time: {execution_time:.4f} seconds")
 
     if debug:
         print(f"grid: {g.vs}")
