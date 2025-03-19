@@ -71,6 +71,7 @@ def initConfig(use_union: bool,
         subsys_1d=subsys_1d,
         use_union=use_union,
         threshold2=1e-6,
+        use_optimization1=True,
     )
 
 def plotArray(array, show=True):
@@ -336,7 +337,7 @@ class CorrectionBasedOnLocalUpdate:
         data_change = data_change*self._config._time_step
         return data_change
     
-    def updateValue(self, curr_result, prev_result, index, frontier, time_step) -> bool:
+    def updateValue(self, curr_result, prev_result, index, frontier:Frontier, updated_points_curr: Frontier, time_step) -> bool:
         x = index[0]
         y = index[1]
         new_value_change = self.recomputeValueChange(data=prev_result, x=x, y=y, t=time_step,)
@@ -344,13 +345,23 @@ class CorrectionBasedOnLocalUpdate:
         new_value = new_value_change + prev_result[x][y]
         curr_result[x][y] = new_value
 
+        if self._config._use_optimization1:
+            # Avoid correcting indices which are already corrected in the current iteration
+            updated_points_curr.add(index)
+
         flag = False
         if abs(old_value - new_value) > self.threshold2():
             flag = True
-            frontier.add(self.prevIndex(index=index))
-            frontier.add(self.nextIndex(index=index))
-
-        # print(f"[{x}][{y}]: {round(old_value, ndigits=4)} -> {round(new_value, ndigits=4)}, {flag}")
+            prev_index = self.prevIndex(index=index)
+            next_index = self.nextIndex(index=index)
+            if self._config._use_optimization1:
+                if updated_points_curr.hasIndex(index=prev_index) is False:
+                    frontier.add(prev_index)
+                if updated_points_curr.hasIndex(index=next_index) is False:
+                    frontier.add(next_index)
+            else:
+                frontier.add(prev_index)
+                frontier.add(next_index)
         return flag
 
     """
@@ -412,6 +423,11 @@ class CorrectionBasedOnLocalUpdate:
                             y=self._config._number_of_grid_points)
         next_frontier = Frontier(x=self._config._number_of_grid_points,
                             y=self._config._number_of_grid_points)
+        updated_points_curr = Frontier(x=self._config._number_of_grid_points,
+                            y=self._config._number_of_grid_points)
+        
+        updated_points_prev = Frontier(x=self._config._number_of_grid_points,
+                            y=self._config._number_of_grid_points)
         
         # cumulative_Frontier = Frontier(x=combined_data_prev.shape[0],
         #                     y=combined_data_prev.shape[1])
@@ -439,10 +455,8 @@ class CorrectionBasedOnLocalUpdate:
             total_indices_corrected = 0
 
             # Compute threshold big delta in Algorithm 1
-            # threshold = self.getThreshold(curr_result, prev_result)
-            # if debug:
-            #     print(f"threshold:{threshold}")
-
+            threshold = self.getThreshold(curr_result, prev_result)
+            print(f"threshold:{threshold}")
 
             curr_time = time.time()
             init_time = time.time() - start_time
@@ -461,7 +475,7 @@ class CorrectionBasedOnLocalUpdate:
             ###### CORRECTION 1: CORRECT THE IDENTIFIED INDICES  ######
 
             for index in new_indices_to_correct:
-                self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=frontier, time_step=i)
+                self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=frontier, updated_points_curr=updated_points_curr, time_step=i)
                 total_indices_corrected += 1
 
             if debug:
@@ -477,7 +491,7 @@ class CorrectionBasedOnLocalUpdate:
             while frontier.isEmpty() == False:
                 for index in frontier.activeIndices():
                     # Update frontier vertex and check if its nghs need to be added to the next_frontier
-                    self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=next_frontier, time_step=i)
+                    self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=next_frontier, updated_points_curr=updated_points_curr, time_step=i)
                     total_indices_corrected += 1
                 
                 frontier, next_frontier = next_frontier, frontier
@@ -486,6 +500,11 @@ class CorrectionBasedOnLocalUpdate:
                     print(f"Frontier: {frontier.count()}")            
 
             result_combined_all_timesteps[i] = curr_result
+
+            # reset updated_points_curr for next iteration
+            if self._config._use_optimization1:
+                updated_points_curr.reset()
+
             curr_time = time.time()
             correction2_time = time.time() - start_time
             start_time = curr_time
@@ -592,7 +611,7 @@ def main():
                         default="101",
                         const="",
                         type=int,
-                        )
+                        )    
     args = parser.parse_args()
     use_union: bool = bool(args.use_union)
     grid_size: int = int(args.grid_size)
@@ -602,6 +621,7 @@ def main():
     print(f"Grid size: {grid_size} x {grid_size}")
     print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
     print(f"Threshold2: {config._threshold2}")
+    print(f"use_optimization1: {config._use_optimization1}")
 
     # Perform direct computation and decomposition
     grid, result_true = direct_computation(
