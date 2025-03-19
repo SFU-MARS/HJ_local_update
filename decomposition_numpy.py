@@ -108,7 +108,7 @@ def decomposition_old(num, saveAllTimeStep=True, lookback_length=0.02, debug=Fal
     execution_time = time.time() - start
 
     # print("Total kernel time: ", execution_time)
-    print(f"Total kernel time: {execution_time:.4f} seconds")
+    print(f"Decomposition time: {execution_time:.4f} seconds")
 
     """
     Combine the results from 2 subsystems
@@ -217,7 +217,8 @@ def decomposition(config: Config, saveAllTimeStep=True, debug=False):
 
     execution_time = time.time() - start
 
-    print(f"Total kernel time: {execution_time:.4f} seconds")
+    # print(f"Total kernel time: {execution_time:.4f} seconds")
+    print(f"Decomposition time: {execution_time:.4f} seconds")
 
     """
     Combine the results from 2 subsystems
