@@ -74,6 +74,7 @@ def initConfig(use_union: bool,
         use_union=use_union,
         threshold2=1e-6,
         use_optimization1=True,
+        # use_optimization1=False,
         generate_big_delta=generate_big_delta,
         big_delta=big_delta,
     )
@@ -230,7 +231,10 @@ def printCorrectnessStatistics(
         f"The maximum absolute error between direct computation and local updates: {diff_corrected_max:0.10f}"
     )
 
-    print("Number of values with error:")
+    print("Number of values with error b/w direct computation and decomposition:")
+    compareArrays(array1=direct_computation_final,
+                  array2=decomp_final)
+    print("Number of values with error b/w direct computation and local update:")
     compareArrays(array1=direct_computation_final,
                   array2=decomp_final_correct)
 
@@ -546,6 +550,7 @@ class CorrectionBasedOnLocalUpdate:
             if debug:
                 print("----------------------------------------------------")
 
+        
         if debug:
             print("================================================")
             print("END doCorrection")
