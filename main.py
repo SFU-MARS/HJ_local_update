@@ -252,10 +252,10 @@ class IterStats:
         print("iteration, "
         "num_of_indices_to_correct, "
         "total_indices_corrected,"
-        "init_time,"
-        "identification_time, "
-        "correction1_time, "
-        "correction2_time, "
+        # "init_time,"
+        # "identification_time, "
+        # "correction1_time, "
+        # "correction2_time, "
         "total_time"
         )
     
@@ -263,10 +263,10 @@ class IterStats:
         print(f"{self._iteration}, "
         f"{self._num_of_indices_to_correct}, "
         f"{self._total_indices_corrected},"
-        f"{round(self._init_time, ndigits=4)},"
-        f"{round(self._identification_time, ndigits=4)}, "
-        f"{round(self._correction1_time, ndigits=4)}, "
-        f"{round(self._correction2_time, ndigits=4)}, "
+        # f"{round(self._init_time, ndigits=4)},"
+        # f"{round(self._identification_time, ndigits=4)}, "
+        # f"{round(self._correction1_time, ndigits=4)}, "
+        # f"{round(self._correction2_time, ndigits=4)}, "
         f"{round(self._total_time, ndigits=4)}"
         )
 
@@ -439,8 +439,8 @@ class CorrectionBasedOnLocalUpdate:
         start_time = time.time()
 
         threshold = self.getThreshold(result_combined_all_timesteps[0], result_combined_all_timesteps[-1])
-        if debug:
-            print(f"threshold:{threshold}")
+        # if debug:
+        print(f"threshold:{threshold}")
 
 
         for i in range(1, len(tau)):
@@ -455,8 +455,8 @@ class CorrectionBasedOnLocalUpdate:
             total_indices_corrected = 0
 
             # Compute threshold big delta in Algorithm 1
-            threshold = self.getThreshold(curr_result, prev_result)
-            print(f"threshold:{threshold}")
+            # threshold = self.getThreshold(curr_result, prev_result)
+            # print(f"threshold:{threshold}")
 
             curr_time = time.time()
             init_time = time.time() - start_time
