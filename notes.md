@@ -21,3 +21,35 @@ Schedule:
 3. (Chong - Mar 8) 6D example.
 4. (Mugilan - March 11) 6D example implementation.
 
+
+
+- Add per-iter stats - done
+- Add time stats - done
+- Add error stats - done
+
+
+Algorithm:
+- Add explanation text for algorithm
+- Modify algorithm to handle 
+
+Implementation:
+- Optimization to avoid recomputing indices which have already been computed
+- Delta as a command-line parameter
+- New algorithm:
+  - Find the indices only for first iteration. 
+  - Just use the updated vertices for all future iterations.
+
+Experiments:
+- Varying delta.
+
+Writing:
+- Observations on the experiments
+  - Difference b/w old delta formula and new one - Even with different deltas, we still get exactly correct results.  
+  - Quantifying work done: 
+    - Include work done by decomposition method. 
+    - But it is not the same as it is on 1D.
+    - Show how work done corresponds to execution time
+  - 
+
+
+

@@ -5,7 +5,7 @@ import numpy as np
 import heterocl as hcl
 # import cv2
 
-from set_2plot import *
+# from set_2plot import *
 from odp.Plots import PlotOptions
 from odp.Plots import plot_isosurface, plot_valuefunction
 

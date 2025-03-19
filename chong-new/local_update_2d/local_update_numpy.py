@@ -5,7 +5,7 @@ import numpy as np
 import heterocl as hcl
 # import cv2
 
-from set_2plot import *
+# from set_2plot import *
 from odp.Plots import PlotOptions
 from odp.Plots import plot_isosurface, plot_valuefunction
 
@@ -23,7 +23,24 @@ from leaking_corner import ground_truth_L, new_theory_L
 
 import time
 
-num = 101
+
+def compareArrays(array1, array2, number_of_precision_points=8, debug=False):
+    diff_array = abs(array1 - array2)
+    if debug:
+        print(f"array1: \n{array1}")
+        print(f"array2: \n{array2}")
+        print(f"diff_array: \n{diff_array}")
+
+    for precision in range(1, number_of_precision_points):
+        precision_value = 1 / (10**precision)
+        number_of_entires_with_error = len(
+            np.argwhere(abs(diff_array) > precision_value)
+        )
+        # print(f"1e-{precision}: {precision_value} {number_of_entires_with_error}")
+        print(f"{precision_value}: {number_of_entires_with_error}")
+
+
+num = 501
 lookback_length = 0.2
 
 grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
@@ -132,6 +149,14 @@ result_combine = decomp_final.copy()
 
 np.put(result_combine, indices_ref, data[indice_transpose[0], indice_transpose[1]])
 print('Im here')
+
+
+compareArrays(array1=true_final,
+              array2=result_combine)
+
+# print(f"true_final: \n{true_final}")
+# # print(f"result_combine[-1]: \n{result_combine[-1]}")
+# print(f"result_combine: \n{result_combine}")
 
 
 '''

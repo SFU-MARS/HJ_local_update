@@ -16,8 +16,8 @@ import time
 
 def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
 
-# num = 101
-# saveAllTimeStep = True
+    # num = 101
+    # saveAllTimeStep = True
 
     # Create Grid
     grid_min = np.array([-4.0, -4.0])
