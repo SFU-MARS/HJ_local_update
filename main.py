@@ -30,7 +30,9 @@ np.set_printoptions(precision=5)
 
 
 def initConfig(use_union: bool, 
-               grid_size: int) -> Config:
+               grid_size: int, 
+               generate_big_delta: int, 
+               big_delta: float,) -> Config:
     if use_union:
         sys_2d=couple_u(
             x=[0, 0],
@@ -72,6 +74,8 @@ def initConfig(use_union: bool,
         use_union=use_union,
         threshold2=1e-6,
         use_optimization1=True,
+        generate_big_delta=generate_big_delta,
+        big_delta=big_delta,
     )
 
 def plotArray(array, show=True):
@@ -438,9 +442,6 @@ class CorrectionBasedOnLocalUpdate:
         curr_tau = tau[0]
         start_time = time.time()
 
-        threshold = self.getThreshold(result_combined_all_timesteps[0], result_combined_all_timesteps[-1])
-        # if debug:
-        print(f"threshold:{threshold}")
 
 
         for i in range(1, len(tau)):
@@ -455,8 +456,14 @@ class CorrectionBasedOnLocalUpdate:
             total_indices_corrected = 0
 
             # Compute threshold big delta in Algorithm 1
-            # threshold = self.getThreshold(curr_result, prev_result)
-            # print(f"threshold:{threshold}")
+            bigDelta = self.getBigDelta(
+                curr_result_combined = curr_result, 
+                prev_result_combined = prev_result, 
+                decomp_result_init= result_combined_all_timesteps[0], 
+                decomp_result_final = result_combined_all_timesteps[-1],)
+            print(f"big_delta:{bigDelta}")
+
+            
 
             curr_time = time.time()
             init_time = time.time() - start_time
@@ -465,7 +472,7 @@ class CorrectionBasedOnLocalUpdate:
             ###### IDENTIFY INDICES TO CORRECT ######
 
             new_indices_to_correct = self.getNewPointsToCorrect(
-                curr_result_upper, curr_result_lower, threshold
+                curr_result_upper, curr_result_lower, bigDelta
             )
 
             curr_time = time.time()
@@ -526,14 +533,22 @@ class CorrectionBasedOnLocalUpdate:
             print("================================================")
             print("END doCorrection")
 
-    def getThreshold(self, curr_result_combined, prev_result_combined):
-        diff = curr_result_combined - prev_result_combined
-        max = np.max(abs(diff))
-        return max
-
-    def getThresholdNewTheory(self, decomp_result_init, decomp_result_final):
-        max = np.max(abs(decomp_result_final - decomp_result_init))
-        return max
+    def getBigDelta(self, curr_result_combined, prev_result_combined, decomp_result_init, decomp_result_final):
+        if self._config._generate_big_delta == 0:
+            # Use a constant big_delta defined in the command-line
+            # Useful for testing
+            return self._config._big_delta
+        elif self._config._generate_big_delta == 1:
+            # Use new theory to generate big_delta
+            # here, we use the initial and final decomposition result to generate the data
+            max_diff = np.max(abs(decomp_result_final - decomp_result_init))
+            return max_diff
+        elif self._config._generate_big_delta == 2:
+            # Use old theory to generate big_delta
+            # Here, we use the previous and current decomposition result.
+            # We will have different big_deltas for each timestep
+            max_diff = np.max(abs(curr_result_combined - prev_result_combined))
+            return max_diff
 
     def threshold2(self):
         return self._config._threshold2
@@ -556,11 +571,11 @@ class CorrectionBasedOnLocalUpdate:
         # print(f"nextIndex of {index} = {next_index}")
         return next_index
     
-    def getNewPointsToCorrect(self, result_upper, result_lower, threshold):
+    def getNewPointsToCorrect(self, result_upper, result_lower, bigDelta):
         result_diff = abs(result_upper - result_lower)
 
         # Get new_points_to_correct =
-        indices_to_correct = np.argwhere(result_diff < threshold)
+        indices_to_correct = np.argwhere(result_diff < bigDelta)
         # print(f"result_upper: \n{result_upper}")
         # print(f"result_lower: \n{result_lower}")
         # print(f"result_diff: \n{result_diff}")
@@ -608,16 +623,37 @@ def main():
     parser.add_argument("--grid_size", 
                         help = "Size of the 2D grid", 
                         nargs="?",
-                        default="101",
+                        default=101,
                         const="",
                         type=int,
+                        )    
+    parser.add_argument("--generate_big_delta", 
+                        help = "Set this argument to "
+                        "0 if you want to use the constant big_delta specified by the --big_delta arguments."
+                        "1 if you want to use new_theory for generating big_delta (described in paper) ."
+                        "2 if you want to generate big_delta for each time_step (old logic).", 
+                        nargs="?",
+                        default=0,
+                        const="",
+                        type=int,
+                        )
+    parser.add_argument("--big_delta", 
+                        help = "The value of big_delta to be used for finding the approximated leaking corners. ", 
+                        nargs="?",
+                        default=0.2,
+                        type=float,
+                        const="",
                         )    
     args = parser.parse_args()
     use_union: bool = bool(args.use_union)
     grid_size: int = int(args.grid_size)
+    generate_big_delta: int = int(args.generate_big_delta)
+    big_delta: float = float(args.big_delta)
     print(f"use_union: {use_union}")
+    print(f"generate_big_delta: {generate_big_delta}")
+    print(f"big_delta: {big_delta}")
 
-    config = initConfig(use_union=use_union, grid_size=grid_size)
+    config = initConfig(use_union=use_union, grid_size=grid_size, generate_big_delta=generate_big_delta, big_delta=big_delta)
     print(f"Grid size: {grid_size} x {grid_size}")
     print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
     print(f"Threshold2: {config._threshold2}")
