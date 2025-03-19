@@ -17,6 +17,7 @@ class Config:
         sys_2d: couple_u,
         use_union: bool,
         threshold2:float,
+        use_optimization1: bool,
     ) -> None:
         self._lookback_length = lookback_length
         self._number_of_grid_points = number_of_grid_points
@@ -29,6 +30,7 @@ class Config:
         self._subsys_1d = subsys_1d
         self._use_union = use_union
         self._threshold2 = threshold2
+        self._use_optimization1 = use_optimization1
 
     def value_function_1d(self, grid: Grid):
         return ShapeRectangle(grid, [-1.0], [1.0])
@@ -98,6 +100,9 @@ class Frontier:
             return True
         else:
             return False
+
+    def hasIndex(self, index):
+        return self.has(index[0], index[1])
         
     def isEmpty(self):
         if len(self.activeIndices()) == 0:
