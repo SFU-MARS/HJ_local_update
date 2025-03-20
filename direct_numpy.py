@@ -189,6 +189,12 @@ def direct_computation(config: Config, saveAllTimeStep, debug=False):
         print(f"data_sub: {data}")
         print(f"len(data_list): {len(data_list)}")
 
+    # print("Writing to file")    
+    # f = open("output.txt", "w")
+    # for line in data:
+    #     f.write(f"{line}")
+    # f.close()
+
     if saveAllTimeStep:
         return g, data_list
 

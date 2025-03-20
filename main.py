@@ -358,7 +358,7 @@ class CorrectionBasedOnLocalUpdate:
         data_change = data_change*self._config._time_step
         return data_change
     
-    def updateValue(self, curr_result, prev_result, index, frontier:Frontier, updated_points_curr: Frontier, time_step) -> bool:
+    def updateValue(self, curr_result, prev_result, index, frontier:Frontier, visited: Frontier, time_step) -> bool:
         x = index[0]
         y = index[1]
         new_value_change = self.recomputeValueChange(data=prev_result, x=x, y=y, t=time_step,)
@@ -366,9 +366,8 @@ class CorrectionBasedOnLocalUpdate:
         new_value = new_value_change + prev_result[x][y]
         curr_result[x][y] = new_value
 
-        if self._config._use_optimization1:
-            # Avoid correcting indices which are already corrected in the current iteration
-            updated_points_curr.add(index)
+        # mark all updated vertices as visited
+        visited.add(index=index)
 
         flag = False
         if abs(old_value - new_value) > self.threshold2():
@@ -377,19 +376,13 @@ class CorrectionBasedOnLocalUpdate:
             next_index_on_x = self.nextIndexOnX(index=index)
             prev_index_on_y = self.prevIndexOnY(index=index)
             next_index_on_y = self.nextIndexOnY(index=index)
-            if self._config._use_optimization1:
-                if updated_points_curr.hasIndex(index=prev_index_on_x) is False:
-                    frontier.add(prev_index_on_x)
-                if updated_points_curr.hasIndex(index=next_index_on_x) is False:
-                    frontier.add(next_index_on_x)
-                if updated_points_curr.hasIndex(index=prev_index_on_y) is False:
-                    frontier.add(prev_index_on_y)
-                if updated_points_curr.hasIndex(index=next_index_on_y) is False:
-                    frontier.add(next_index_on_y)
-            else:
+            if visited.hasIndex(index=prev_index_on_x) is False:
                 frontier.add(prev_index_on_x)
+            if visited.hasIndex(index=next_index_on_x) is False:
                 frontier.add(next_index_on_x)
+            if visited.hasIndex(index=prev_index_on_y) is False:
                 frontier.add(prev_index_on_y)
+            if visited.hasIndex(index=next_index_on_y) is False:
                 frontier.add(next_index_on_y)
         return flag
 
@@ -446,16 +439,11 @@ class CorrectionBasedOnLocalUpdate:
         subsystem1_data_all_timesteps = self._decomposition_result.subsystem1()
         subsystem2_data_all_timesteps = self._decomposition_result.subsystem2()
 
-        combined_data_prev = result_combined_all_timesteps[0]
-
         frontier = Frontier(x=self._config._number_of_grid_points,
                             y=self._config._number_of_grid_points)
         next_frontier = Frontier(x=self._config._number_of_grid_points,
                             y=self._config._number_of_grid_points)
-        updated_points_curr = Frontier(x=self._config._number_of_grid_points,
-                            y=self._config._number_of_grid_points)
-        
-        updated_points_prev = Frontier(x=self._config._number_of_grid_points,
+        visited = Frontier(x=self._config._number_of_grid_points,
                             y=self._config._number_of_grid_points)
         
         # cumulative_Frontier = Frontier(x=combined_data_prev.shape[0],
@@ -477,6 +465,7 @@ class CorrectionBasedOnLocalUpdate:
             prev_result = result_combined_all_timesteps[i - 1]
             curr_result_true = self._true_result[i]
             total_indices_corrected = 0
+            visited.reset()
 
             # Compute threshold big delta in Algorithm 1
             bigDelta = self.getBigDelta(
@@ -503,7 +492,7 @@ class CorrectionBasedOnLocalUpdate:
             ###### CORRECTION 1: CORRECT THE IDENTIFIED INDICES  ######
 
             for index in new_indices_to_correct:
-                self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=frontier, updated_points_curr=updated_points_curr, time_step=i)
+                self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=frontier, visited=visited, time_step=i)
                 total_indices_corrected += 1
 
             if debug:
@@ -516,11 +505,12 @@ class CorrectionBasedOnLocalUpdate:
 
             ###### CORRECTION 2: RECURSIVELY CORRECT THE NGHS OF IDENTIFIED INDICES  ######
 
-            while frontier.isEmpty() == False:
+            while frontier.isEmpty() is False:
                 for index in frontier.activeIndices():
                     # Update frontier vertex and check if its nghs need to be added to the next_frontier
-                    self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=next_frontier, updated_points_curr=updated_points_curr, time_step=i)
-                    total_indices_corrected += 1
+                    if visited.hasIndex(index) is False:
+                        self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=next_frontier, visited=visited, time_step=i)
+                        total_indices_corrected += 1
                 
                 frontier, next_frontier = next_frontier, frontier
                 next_frontier.reset()
@@ -531,7 +521,7 @@ class CorrectionBasedOnLocalUpdate:
 
             # reset updated_points_curr for next iteration
             if self._config._use_optimization1:
-                updated_points_curr.reset()
+                visited.reset()
 
             curr_time = time.time()
             correction2_time = time.time() - start_time

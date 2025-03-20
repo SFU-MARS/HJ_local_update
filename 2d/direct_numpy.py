@@ -16,8 +16,9 @@ import time
 
 def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
 
-# num = 101
-# saveAllTimeStep = True
+    num = 101
+    lookback_length = 0.20
+    # saveAllTimeStep = True
 
     # Create Grid
     grid_min = np.array([-4.0, -4.0])
@@ -92,10 +93,16 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
         
     print("Total kernel time direct: ", execution_time)
     print("Finished updating the value function")
-    
+
+    # print("Writing to file")    
+    # f = open("output.txt", "w")
+    # for line in data:
+    #     f.write(f"{line}")
+    # f.close()
+
     if saveAllTimeStep:
         return g, data_list
-
+    
     return g, data
 
 
