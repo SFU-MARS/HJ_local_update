@@ -258,7 +258,7 @@ class IterStats:
     def printHeader(self):
         print("iteration, "
         "num_of_indices_to_correct, "
-        "total_indices_corrected,"
+        "total_indices_corrected, "
         # "init_time,"
         # "identification_time, "
         # "correction1_time, "
@@ -269,8 +269,8 @@ class IterStats:
     def printStats(self):
         print(f"{self._iteration}, "
         f"{self._num_of_indices_to_correct}, "
-        f"{self._total_indices_corrected},"
-        # f"{round(self._init_time, ndigits=4)},"
+        f"{self._total_indices_corrected}, "
+        # f"{round(self._init_time, ndigits=4)}, "
         # f"{round(self._identification_time, ndigits=4)}, "
         # f"{round(self._correction1_time, ndigits=4)}, "
         # f"{round(self._correction2_time, ndigits=4)}, "
@@ -386,53 +386,8 @@ class CorrectionBasedOnLocalUpdate:
         return flag
 
     def doCorrection(self, debug=False):
-        """
-        cumulative_points_to_correct = array of 0s based on the combined_result array.
-        new_points_to_correct = array of 0s based on the combined_result array.
-        for each time_step:
-
-            # reset frontier, new_points_to_correct to all false
-
-            # find the points to correct from lower and upper subsystem results
-            for each point:
-                if lower[point] - upper[point] < threshold:
-                    new_points_to_correct[point] = 1
-                    # add to cumulative_points_to_correct
-                    # Optimize this stuff
-                    cumulative_points_to_correct[point] = 1
-
-            # for all points to be recomputed, recompute them.
-            for point in cumulative_points_to_correct:
-                flag, point = recompute_value(point, prev_combined_result)
-                # Optimize this stuff: can we maintain the border and only check frontier for the border vertices?
-                if flag:
-                    # should recompute the neighbors also.
-                    frontier[point] = 1
-
-            #
-            while frontier is not empty:
-                # should check neighbors of all points in fronier
-                for point in frontier:
-                    for neighbor of point:
-                        # if cumulative_points_to_correct[neighbor] is False:
-                            new_points_to_correct[neighbor] = 1
-
-                # reset frontier for next iteration
-                for point in new_points_to_correct:
-                    new_points_to_correct[point] = 0
-                    frontier[point] = 0
-                    flag, point = recompute_value(point, prev_combined_result)
-
-                    if flag:
-                        # mark this point for corrections in all future time steps
-                        cumulative_points_to_correct[point] = 1
-
-                        # add it to frontier and check its neighbors
-                        frontier[point] = 1
-
-        """
         if debug:
-            print("================================================")
+            print("------------------------------------------------")
             print("START doCorrection")
         result_combined_all_timesteps = self._decomposition_result.combined()
         subsystem1_data_all_timesteps = self._decomposition_result.subsystem1()
@@ -472,8 +427,8 @@ class CorrectionBasedOnLocalUpdate:
                 prev_result_combined = prev_result, 
                 decomp_result_init= result_combined_all_timesteps[0], 
                 decomp_result_final = result_combined_all_timesteps[-1],)
-            # if debug:
-            print(f"For iteration:{i}, big_delta:{bigDelta}")
+            if debug:
+                print(f"For iteration:{i}, big_delta:{bigDelta}")
 
             curr_time = time.time()
             init_time = time.time() - start_time
@@ -495,10 +450,6 @@ class CorrectionBasedOnLocalUpdate:
                 self.updateValue(curr_result=curr_result, prev_result=prev_result, index=index, frontier=frontier, visited=visited, time_step=i)
                 total_indices_corrected += 1
 
-            if debug:
-                print(f"new_indices_to_correct: {len(new_indices_to_correct)}")
-                print(f"Frontier: {frontier.count()}")
-
             curr_time = time.time()
             correction1_time = time.time() - start_time
             start_time = curr_time
@@ -514,8 +465,6 @@ class CorrectionBasedOnLocalUpdate:
                 
                 frontier, next_frontier = next_frontier, frontier
                 next_frontier.reset()
-                if debug:
-                    print(f"Frontier: {frontier.count()}")            
 
             result_combined_all_timesteps[i] = curr_result
 
@@ -537,12 +486,9 @@ class CorrectionBasedOnLocalUpdate:
                 correction2_time=correction2_time,
             ))
             
-            if debug:
-                print("----------------------------------------------------")
-
         
         if debug:
-            print("================================================")
+            print("------------------------------------------------")
             print("END doCorrection")
 
     def getBigDelta(self, curr_result_combined, prev_result_combined, decomp_result_init, decomp_result_final):
@@ -600,7 +546,9 @@ class CorrectionBasedOnLocalUpdate:
         indices_to_correct = np.argwhere(result_diff < bigDelta)
         return indices_to_correct
     
-    def printStats(self):
+    def printPerfStats(self):
+        print("")
+        print("Printing performance stats per iteration")
         self._perf_stats.printStats()
     
 def printResults(result_list):
@@ -650,7 +598,7 @@ def main():
                         "1 if you want to use static big_delta based on initial and final decomposition result. "
                         "2 if you want to use dynamic big_delta for each time_step (as described in paper).", 
                         nargs="?",
-                        default=0,
+                        default=2,
                         const="",
                         type=int,
                         )
@@ -661,15 +609,24 @@ def main():
                         type=float,
                         const="",
                         )    
+    parser.add_argument("--debug", 
+                        help = "Debug Mode. Set to 1 for printing debug logs.", 
+                        nargs="?",
+                        default=False,
+                        const="",
+                        type=int,
+                        )    
+
     args = parser.parse_args()
     use_union: bool = bool(args.use_union)
     grid_size: int = int(args.grid_size)
     generate_big_delta: int = int(args.generate_big_delta)
     big_delta: float = float(args.big_delta)
+    use_debug: bool = bool(args.debug)
     print(f"use_union: {use_union}")
     print(f"generate_big_delta: {generate_big_delta}")
     print(f"Grid size: {grid_size} x {grid_size}")
-    print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
+    print(f"use_debug: {use_debug}")
     if generate_big_delta == 0:
         print(f"Using static big_delta = {big_delta} for each timestep")
     elif generate_big_delta == 1:
@@ -680,6 +637,8 @@ def main():
     
     
     config = initConfig(use_union=use_union, grid_size=grid_size, generate_big_delta=generate_big_delta, big_delta=big_delta)
+    print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
+    print("")
 
     # Perform direct computation and decomposition
     grid, result_true = direct_computation(
@@ -687,6 +646,7 @@ def main():
         saveAllTimeStep=True,
         # lookback_length=config._lookback_length,
     )
+    print("")
     decomposition_result: DecompositionResult = decomposition(
         config=config,
         saveAllTimeStep=True,
@@ -706,13 +666,15 @@ def main():
         config=config,
     )
     start = time.time()
-    local_update.doCorrection()
+    local_update.doCorrection(debug=use_debug,)
     correction_time = time.time() - start
-    local_update.printStats()
+    if use_debug:
+        local_update.printPerfStats()
     print(f"Total correction time: {round(correction_time,ndigits=4)} seconds")
     print(f"Total points identified: {local_update._perf_stats.totalPointsIdentified()}")
     print(f"Total points corrected: {local_update._perf_stats.totalPointsCorrected()}")
 
+    print("")
     printCorrectnessStatistics(
         direct_computation_results=result_true,
         decomposition_results=decomposition_result_copy,
