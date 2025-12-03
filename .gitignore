@@ -1,0 +1,10 @@
+__pycache__
+*.npy
+*.pyc
+__pycache__/
+/__pycache__/*
+*.out
+*.output
+*.bash
+todo.txt
+

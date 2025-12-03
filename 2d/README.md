@@ -1,27 +1,32 @@
 # HJ_local_update
 
-Prerequisite: [Optimized_dp](https://github.com/SFU-MARS/optimized_dp)
+### Prerequisite 
 
-[Numpy version](https://github.com/SFU-MARS/HJ_local_update/blob/main/local_update_numpy.py) and [Heterocl version]() of local updating code.
+- Install [Optimized_dp](https://github.com/SFU-MARS/optimized_dp) 
 
-Code Structure:
+### Running Local Update
+
+For Union Cases, use the following command:
+
+```bash 
+python local_update_numpy.py --grid_size 101 --use_union 1
+```
+For Intersection Cases, use the following command:
+```bash 
+python local_update_numpy.py --grid_size 101 --use_union 0 
+```
+
+Use the `--grid_size` command-line argument to change the grid size. 
+
+#### Code Structure
 
     local_update_numpy.py
     ├── direct_numpy.py
     ├── decomposition_numpy.py
     │    ├── update_V_numpy.py
     │    └── subsystem.py 
+    ├── config.py    
     ├── update_V_numpy.py
-    ├── system.py
-    ├── set_2plot.py
-    └── leaking_corner.py
-
-    local_update_hcl.py
-    ├── direct_hcl.py
-    ├── decomposition_hcl.py
-    │    ├── update_V_hcl.py
-    │    └── subsystem.py 
-    ├── update_V_hcl.py
     ├── system.py
     └── set_2plot.py
 
