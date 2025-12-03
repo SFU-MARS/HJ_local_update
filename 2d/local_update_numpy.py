@@ -1,6 +1,6 @@
 import argparse
-from direct_numpy import direct_computation_old, direct_computation
-from decomposition_numpy import decomposition, decomposition_old, DecompositionResult
+from direct_numpy import direct_computation
+from decomposition_numpy import decomposition, DecompositionResult
 
 import numpy as np
 import heterocl as hcl
@@ -74,7 +74,6 @@ def initConfig(use_union: bool,
         use_union=use_union,
         threshold2=1e-6,
         use_optimization1=True,
-        # use_optimization1=False,
         generate_big_delta=generate_big_delta,
         big_delta=big_delta,
     )
@@ -386,52 +385,52 @@ class CorrectionBasedOnLocalUpdate:
                 frontier.add(next_index_on_y)
         return flag
 
-    """
-    cumulative_points_to_correct = array of 0s based on the combined_result array.
-    new_points_to_correct = array of 0s based on the combined_result array.
-    for each time_step:
+    def doCorrection(self, debug=False):
+        """
+        cumulative_points_to_correct = array of 0s based on the combined_result array.
+        new_points_to_correct = array of 0s based on the combined_result array.
+        for each time_step:
 
-        # reset frontier, new_points_to_correct to all false
+            # reset frontier, new_points_to_correct to all false
 
-        # find the points to correct from lower and upper subsystem results
-        for each point:
-            if lower[point] - upper[point] < threshold:
-                new_points_to_correct[point] = 1
-                # add to cumulative_points_to_correct
-                # Optimize this stuff
-                cumulative_points_to_correct[point] = 1
-
-        # for all points to be recomputed, recompute them.
-        for point in cumulative_points_to_correct:
-            flag, point = recompute_value(point, prev_combined_result)
-            # Optimize this stuff: can we maintain the border and only check frontier for the border vertices?
-            if flag:
-                # should recompute the neighbors also.
-                frontier[point] = 1
-
-        #
-        while frontier is not empty:
-            # should check neighbors of all points in fronier
-            for point in frontier:
-                for neighbor of point:
-                    # if cumulative_points_to_correct[neighbor] is False:
-                        new_points_to_correct[neighbor] = 1
-
-            # reset frontier for next iteration
-            for point in new_points_to_correct:
-                new_points_to_correct[point] = 0
-                frontier[point] = 0
-                flag, point = recompute_value(point, prev_combined_result)
-
-                if flag:
-                    # mark this point for corrections in all future time steps
+            # find the points to correct from lower and upper subsystem results
+            for each point:
+                if lower[point] - upper[point] < threshold:
+                    new_points_to_correct[point] = 1
+                    # add to cumulative_points_to_correct
+                    # Optimize this stuff
                     cumulative_points_to_correct[point] = 1
 
-                    # add it to frontier and check its neighbors
+            # for all points to be recomputed, recompute them.
+            for point in cumulative_points_to_correct:
+                flag, point = recompute_value(point, prev_combined_result)
+                # Optimize this stuff: can we maintain the border and only check frontier for the border vertices?
+                if flag:
+                    # should recompute the neighbors also.
                     frontier[point] = 1
 
-    """
-    def doCorrection(self, debug=False):
+            #
+            while frontier is not empty:
+                # should check neighbors of all points in fronier
+                for point in frontier:
+                    for neighbor of point:
+                        # if cumulative_points_to_correct[neighbor] is False:
+                            new_points_to_correct[neighbor] = 1
+
+                # reset frontier for next iteration
+                for point in new_points_to_correct:
+                    new_points_to_correct[point] = 0
+                    frontier[point] = 0
+                    flag, point = recompute_value(point, prev_combined_result)
+
+                    if flag:
+                        # mark this point for corrections in all future time steps
+                        cumulative_points_to_correct[point] = 1
+
+                        # add it to frontier and check its neighbors
+                        frontier[point] = 1
+
+        """
         if debug:
             print("================================================")
             print("START doCorrection")
@@ -473,7 +472,8 @@ class CorrectionBasedOnLocalUpdate:
                 prev_result_combined = prev_result, 
                 decomp_result_init= result_combined_all_timesteps[0], 
                 decomp_result_final = result_combined_all_timesteps[-1],)
-            print(f"big_delta:{bigDelta}")
+            # if debug:
+            print(f"For iteration:{i}, big_delta:{bigDelta}")
 
             curr_time = time.time()
             init_time = time.time() - start_time
@@ -551,12 +551,10 @@ class CorrectionBasedOnLocalUpdate:
             # Useful for testing
             return self._config._big_delta
         elif self._config._generate_big_delta == 1:
-            # Use new theory to generate big_delta
             # here, we use the initial and final decomposition result to generate the data
             max_diff = np.max(abs(decomp_result_final - decomp_result_init))
             return max_diff
         elif self._config._generate_big_delta == 2:
-            # Use old theory to generate big_delta
             # Here, we use the previous and current decomposition result.
             # We will have different big_deltas for each timestep
             max_diff = np.max(abs(curr_result_combined - prev_result_combined))
@@ -599,14 +597,7 @@ class CorrectionBasedOnLocalUpdate:
     
     def getNewPointsToCorrect(self, result_upper, result_lower, bigDelta):
         result_diff = abs(result_upper - result_lower)
-
-        # Get new_points_to_correct =
         indices_to_correct = np.argwhere(result_diff < bigDelta)
-        # print(f"result_upper: \n{result_upper}")
-        # print(f"result_lower: \n{result_lower}")
-        # print(f"result_diff: \n{result_diff}")
-
-        # print(f"indices_to_correct: \n{indices_to_correct}")
         return indices_to_correct
     
     def printStats(self):
@@ -640,31 +631,31 @@ def main():
     # Initializtion
     parser = argparse.ArgumentParser()
     parser.add_argument("--use_union", 
-                        help = "Set this argument 0 if you do not want to use union. Otherwise, set it to 1", 
+                        help = "Set this argument 1 if you want the approximated value function based on union cases. Set it to 1 for approximated value function based on intersection cases", 
                         nargs="?",
                         default="0",
                         const="",
                         type=int,
                         )
     parser.add_argument("--grid_size", 
-                        help = "Size of the 2D grid", 
+                        help = "Size of the 2D grid. For example, use --grid_size=101 for a 101x101 grid.", 
                         nargs="?",
                         default=101,
                         const="",
                         type=int,
                         )    
     parser.add_argument("--generate_big_delta", 
-                        help = "Set this argument to "
-                        "0 if you want to use the constant big_delta specified by the --big_delta arguments."
-                        "1 if you want to use new_theory for generating big_delta (described in paper) ."
-                        "2 if you want to generate big_delta for each time_step (old logic).", 
+                        help = "Set this argument to"
+                        "0 if you want to use the constant big_delta specified by the --big_delta arguments. Useful for testing purposes."
+                        "1 if you want to use static big_delta based on initial and final decomposition result. "
+                        "2 if you want to use dynamic big_delta for each time_step (as described in paper).", 
                         nargs="?",
                         default=0,
                         const="",
                         type=int,
                         )
     parser.add_argument("--big_delta", 
-                        help = "The value of big_delta to be used for finding the approximated leaking corners. ", 
+                        help = "The value of big_delta to be used for finding the approximated leaking corners.", 
                         nargs="?",
                         default=0.2,
                         type=float,
@@ -677,13 +668,18 @@ def main():
     big_delta: float = float(args.big_delta)
     print(f"use_union: {use_union}")
     print(f"generate_big_delta: {generate_big_delta}")
-    print(f"big_delta: {big_delta}")
-
-    config = initConfig(use_union=use_union, grid_size=grid_size, generate_big_delta=generate_big_delta, big_delta=big_delta)
     print(f"Grid size: {grid_size} x {grid_size}")
     print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
-    print(f"Threshold2: {config._threshold2}")
-    print(f"use_optimization1: {config._use_optimization1}")
+    if generate_big_delta == 0:
+        print(f"Using static big_delta = {big_delta} for each timestep")
+    elif generate_big_delta == 1:
+        print(f"Generating big_delta something")
+    else:
+        print(f"Generating big_delta at each timestep")
+        
+    
+    
+    config = initConfig(use_union=use_union, grid_size=grid_size, generate_big_delta=generate_big_delta, big_delta=big_delta)
 
     # Perform direct computation and decomposition
     grid, result_true = direct_computation(
@@ -691,48 +687,17 @@ def main():
         saveAllTimeStep=True,
         # lookback_length=config._lookback_length,
     )
-    # printResults(result_list=result_true)
-    # direct_comp_old(
-    #     num=config._number_of_grid_points,
-    #     saveAllTimeStep=True,
-    #     lookback_length=config._lookback_length,
-    # )
-    # result_decomp_old = decomposition_old(
-    #     config._number_of_grid_points,
-    #     saveAllTimeStep=True,
-    #     lookback_length=config._lookback_length,
-    # )
     decomposition_result: DecompositionResult = decomposition(
         config=config,
         saveAllTimeStep=True,
     )
     # Initialize the value function
-    # data_init = ShapeRectangle(grid, [-1.0, -1.0], [1.0, 1.0])
     data_init = config.value_function_2d(grid=grid)
 
     direct_computation_final = result_true[-1]
     decomp_final = decomposition_result.combined()[-1]
-    # decomp_final_old = result_decomp_old[-1]
-
-    print("comparing decomposition_old and decomposition")
+    
     count = 0
-    # for x, y in zip(result_true, decomposition_result.combined()):
-    #     # result_diff2 = decomp_final - decomp_final_old
-    #     print(f"Timestep: {count}")
-    #     count += 1
-    #     compareArrays(x, y)
-    #     print("-----------------------------------")
-    #     # exit(1)
-    #     # plotArray(result_diff2)
-
-    # print("comparing decomp_final and true_final")
-    # compareArrays(decomp_final, true_final, debug=True)
-
-    # correctionBasedOnDirectComputation(
-    #     true_final=true_final,
-    #     result_decomp=decomposition_result.combined(),
-    #     config=config,
-    # )
     decomposition_result_copy = copy.deepcopy(decomposition_result)
 
     local_update = CorrectionBasedOnLocalUpdate(
@@ -754,8 +719,6 @@ def main():
         corrected_decomposition_results=decomposition_result,
     )
 
-    # compareArrays(array1=decomposition_result.combined()[-1],
-    #               array2=result_true[-1])
     
 if __name__ == "__main__":
     main()
