@@ -91,7 +91,7 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.05,
     print("Total kernel time decomposition: ", execution_time)
     print("Finished updating the value function")
 
-    np.save('result_decomp_3d.npy', result_full)
+    np.save('results/result_decomp_3d.npy', result_full)
 
     # Visualization of 3D value function
     po = PlotOptions(do_plot=False, plot_type="set", plotDims=[0,1,2], slicesCut=[],colorscale="Bluered", 
@@ -104,4 +104,6 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.05,
 if __name__ == "__main__":
     if os.path.exists("plots") == False:
         os.mkdir("plots")
+    if os.path.exists("results") == False:
+        os.mkdir("results")
     decomposition(41, saveAllTimeStep=True, lookback_length=1.0)
