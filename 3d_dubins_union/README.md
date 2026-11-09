@@ -6,14 +6,14 @@
 
 ### Running Local Update
 
-First generate the direct and decomposition results (use `accuracy='low'` and `t_step=0.04` to match the local update scheme):
+First generate the direct and decomposition results (both default to `accuracy='low'` and `t_step=0.04` to match the local update scheme):
 
 ```bash
 python -c "
 from direct import direct_comp
 from decomposition import decomposition
-direct_comp(41, lookback_length=1.0, t_step=0.04, accuracy='low', plot=False)
-decomposition(41, lookback_length=1.0, t_step=0.04, accuracy='low', plot=False)
+direct_comp(41, plot=False)
+decomposition(41, plot=False)
 "
 ```
 

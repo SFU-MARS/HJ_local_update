@@ -428,6 +428,11 @@ def main():
     for path in (args.decomp_file, args.true_file):
         if not os.path.isfile(path):
             parser.error(f"file not found: {path}")
+    decomp_shape = np.load(args.decomp_file, mmap_mode='r').shape
+    true_shape = np.load(args.true_file, mmap_mode='r').shape
+    if decomp_shape != true_shape:
+        parser.error(f"shape mismatch: {args.decomp_file} {decomp_shape} vs {args.true_file} {true_shape}, "
+                     "generate both files with the same t_step and accuracy (see README)")
 
     # Step 2: set the dynamics, same as the direct computation, control tries to avoid the obstacle
     sys = dubins_car(v=1, wMax=1, dMax=0.0, uMode='max', dMode='min')

@@ -14,8 +14,8 @@ import time
 import os
 
 
-def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.05,
-                  obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="medium", plot=True):
+def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
+                  obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="low", plot=True):
     r'''
         Decompose the 3D Dubins car
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{theta} = w
