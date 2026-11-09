@@ -2,7 +2,7 @@
 
 ### Prerequisite
 
-- Install [Optimized_dp](https://github.com/SFU-MARS/optimized_dp)
+- Install [Optimized_dp](https://github.com/SFU-MARS/optimized_dp) (includes HeteroCL)
 
 ### Running Local Update
 
@@ -35,7 +35,7 @@ Run all commands inside `3d_dubins_union`.
 
 ### Computation Time
 
-41 x 41 x 41 grid, 25 time steps (`t_step=0.04`, `accuracy='low'`), 32 CPU threads.
+41 x 41 x 41 grid, 25 time steps (`t_step=0.04`, `accuracy='low'`), measured on a machine with 32 logical CPUs (times vary by machine).
 
 | Method | Time-stepping loop (s) | Total (s) | Points with error > 1e-5 |
 |---|---|---|---|
@@ -45,7 +45,7 @@ Run all commands inside `3d_dubins_union`.
 | Local update, numpy (`local_update_numpy.py`) | 11.4 | 11.4 | 4 |
 
 - Time-stepping loop: HJSolver "Total kernel time" for direct computation, "Total correction time" for the local update.
-- Total: the full HJSolver call for direct computation (kernel build + setup + loop); kernel build/load + input copy + loop for the HeteroCL local update.
+- Total: the full HJSolver call for direct computation (kernel build + setup + loop); kernel build/load + input copy + loop for the HeteroCL local update; the loop only for the numpy local update (no build or copy step).
 - The decomposition result is read from file, so its computation time is not included.
 - Error is measured against the direct computation at the final time step (the decomposition alone has 51323 points with error > 1e-5).
 
@@ -56,8 +56,9 @@ Run all commands inside `3d_dubins_union`.
     └── system.py
 
     local_update_hcl.py
-    └── local_update_numpy.py
+    ├── local_update_numpy.py  (dilate, get_leaking_set, printCorrectnessStatistics)
+    └── odp                    (DubinsCar, 1st order ENO derivatives)
 
-    direct.py
-    decomposition.py
+    direct.py                  (odp HJSolver, DubinsCar)
+    decomposition.py           (odp HJSolver)
     └── subsystem.py

@@ -60,10 +60,12 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     print("Total kernel time direct computation: ", execution_time)
     print("Finished updating the value function")
 
+    os.makedirs('results', exist_ok=True)
     np.save('results/result_direct_3d.npy', result)
 
     # Visualization of 3D value function
     if plot:
+        os.makedirs('plots', exist_ok=True)
         po = PlotOptions(do_plot=False, plot_type="set", plotDims=[0,1,2], slicesCut=[], colorscale="Bluered",
                         save_fig=True, filename="plots/direct_result", interactive_html=True)
         visualize_plots(result, g, po)
@@ -72,8 +74,4 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
 
 
 if __name__ == "__main__":
-    if os.path.exists("plots") == False:
-        os.mkdir("plots")
-    if os.path.exists("results") == False:
-        os.mkdir("results")
     direct_comp(41, saveAllTimeStep=True, lookback_length=1.0)
