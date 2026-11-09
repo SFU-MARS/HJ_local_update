@@ -15,31 +15,71 @@ from odp.spatialDerivatives.firstOrderENO.first_orderENO3D import spa_derivX, sp
 from local_update_numpy import dilate, printCorrectnessStatistics
 
 
-def build_local_update_kernel(sys, grid):
+def build_local_update_kernel(sys, grid, num_steps, threshold):
     '''
-        HeteroCL kernel of one local update time step:
-            V_new = V_prev + t_step * (H + dissipation)   inside the update region (mask == 1)
-            V_new = V_decomp                              outside the update region
-        Same first order scheme as local_update_numpy.py (1st order ENO + Lax-Friedrichs + forward Euler),
-        the loop over x is parallelized across threads.
+        HeteroCL kernel of one local update time step s:
+            region = leaking corners + points (and their neighbours) where V_prev differs from the
+                     decomposition result at step s-1 by more than threshold
+            V_new = V_prev + t_step * (H + dissipation)   inside the region
+            V_new = decomposition result at step s        outside the region
+        Same first order scheme as local_update_numpy.py (1st order ENO + Lax-Friedrichs + forward Euler).
+        The whole decomposition result stays in one HeteroCL array (shape (t, x, y, theta)), so no
+        numpy <-> HeteroCL conversion is needed between time steps. The loop over x is parallelized.
     '''
     shape = tuple(grid.pts_each_dim)
     V_new = hcl.placeholder(shape, name="V_new", dtype=hcl.Float())
     V_prev = hcl.placeholder(shape, name="V_prev", dtype=hcl.Float())
-    V_decomp = hcl.placeholder(shape, name="V_decomp", dtype=hcl.Float())
-    mask = hcl.placeholder(shape, name="mask", dtype=hcl.Int())
+    V_decomp = hcl.placeholder((num_steps,) + shape, name="V_decomp", dtype=hcl.Float())
+    leaking = hcl.placeholder(shape, name="leaking", dtype=hcl.Int())
     x1 = hcl.placeholder((shape[0],), name="x1", dtype=hcl.Float())
     x2 = hcl.placeholder((shape[1],), name="x2", dtype=hcl.Float())
     x3 = hcl.placeholder((shape[2],), name="x3", dtype=hcl.Float())
-    t = hcl.placeholder((2,), name="t", dtype=hcl.Float())
+    step = hcl.placeholder((1,), name="step", dtype=hcl.Int())
     t_step = hcl.placeholder((1,), name="t_step", dtype=hcl.Float())
 
-    def graph_create(V_new, V_prev, V_decomp, mask, x1, x2, x3, t, t_step):
+    def graph_create(V_new, V_prev, V_decomp, leaking, x1, x2, x3, step, t_step):
+        def corrected(a, b, c):
+            # The point was corrected at the previous time step
+            return my_abs(V_prev[a, b, c] - V_decomp[step[0] - 1, a, b, c]) > threshold
+
+        def mark_neighbours(in_region, i, j, k):
+            # Mark the point if any neighbour along any dimension was corrected (dilation in local_update_numpy.py)
+            idx = (i, j, k)
+            for dim in range(3):
+                n = shape[dim]
+                for offset in (-1, 1):
+                    nb = hcl.scalar(0, "nb", dtype=hcl.Int())
+                    nb[0] = idx[dim] + offset
+                    inside = hcl.scalar(1, "inside", dtype=hcl.Int())
+                    if dim in grid.pDim:
+                        # Periodic dimension wraps around
+                        with hcl.if_(nb[0] < 0):
+                            nb[0] = n - 1
+                        with hcl.if_(nb[0] > n - 1):
+                            nb[0] = 0
+                    else:
+                        with hcl.if_(nb[0] < 0):
+                            inside[0] = 0
+                        with hcl.if_(nb[0] > n - 1):
+                            inside[0] = 0
+                    with hcl.if_(inside[0] == 1):
+                        nb_idx = [i, j, k]
+                        nb_idx[dim] = nb[0]
+                        with hcl.if_(corrected(*nb_idx)):
+                            in_region[0] = 1
+
         with hcl.Stage("LocalUpdate"):
             with hcl.for_(0, shape[0], name="i") as i:
                 with hcl.for_(0, shape[1], name="j") as j:
                     with hcl.for_(0, shape[2], name="k") as k:
-                        with hcl.if_(mask[i, j, k] == 1):
+                        # Update region of this time step
+                        in_region = hcl.scalar(0, "in_region", dtype=hcl.Int())
+                        in_region[0] = leaking[i, j, k]
+                        with hcl.if_(corrected(i, j, k)):
+                            in_region[0] = 1
+                        mark_neighbours(in_region, i, j, k)
+
+                        with hcl.if_(in_region[0] == 1):
                             # Left and right spatial derivatives (1st order)
                             dV_dx_L = hcl.scalar(0, "dV_dx_L")
                             dV_dx_R = hcl.scalar(0, "dV_dx_R")
@@ -59,14 +99,14 @@ def build_local_update_kernel(sys, grid):
                             dV_dy[0] = (dV_dy_L[0] + dV_dy_R[0]) / 2
                             dV_dT[0] = (dV_dT_L[0] + dV_dT_R[0]) / 2
 
-                            # Optimal control and dynamical rates of change
+                            # Optimal control and dynamical rates of change (the dynamics do not depend on t)
                             state = (x1[i], x2[j], x3[k])
-                            uOpt = sys.opt_ctrl(t, state, (dV_dx[0], dV_dy[0], dV_dT[0]))
-                            dx_dt, dy_dt, dT_dt = sys.dynamics(t, state, uOpt, (0, 0, 0))
+                            uOpt = sys.opt_ctrl(0, state, (dV_dx[0], dV_dy[0], dV_dT[0]))
+                            dx_dt, dy_dt, dT_dt = sys.dynamics(0, state, uOpt, (0, 0, 0))
 
                             # Lax-Friedrichs dissipation, alpha is the max rate of change over the control set
-                            r1_x, r1_y, r1_T = sys.dynamics(t, state, (sys.wMax, 0, 0), (0, 0, 0))
-                            r2_x, r2_y, r2_T = sys.dynamics(t, state, (-sys.wMax, 0, 0), (0, 0, 0))
+                            r1_x, r1_y, r1_T = sys.dynamics(0, state, (sys.wMax, 0, 0), (0, 0, 0))
+                            r2_x, r2_y, r2_T = sys.dynamics(0, state, (-sys.wMax, 0, 0), (0, 0, 0))
                             alpha_x = hcl.scalar(0, "alpha_x")
                             alpha_y = hcl.scalar(0, "alpha_y")
                             alpha_T = hcl.scalar(0, "alpha_T")
@@ -83,9 +123,9 @@ def build_local_update_kernel(sys, grid):
                                 dx_dt * dV_dx[0] + dy_dt * dV_dy[0] + dT_dt * dV_dT[0] + diss[0])
                         with hcl.else_():
                             # Outside the update region keep the decomposition result
-                            V_new[i, j, k] = V_decomp[i, j, k]
+                            V_new[i, j, k] = V_decomp[step[0], i, j, k]
 
-    s = hcl.create_schedule([V_new, V_prev, V_decomp, mask, x1, x2, x3, t, t_step], graph_create)
+    s = hcl.create_schedule([V_new, V_prev, V_decomp, leaking, x1, x2, x3, step, t_step], graph_create)
     # Thread parallelize the loop over x
     s_U = graph_create.LocalUpdate
     s[s_U].parallel(s_U.i)
@@ -102,6 +142,7 @@ def local_update_hcl_from_file(decomp_file, data_init_upper, data_init_lower, tr
     result_decomp = np.load(decomp_file).astype(np.float32)
     result_true = np.load(true_file)
     data_init = np.minimum(data_init_upper, data_init_lower).astype(np.float32)
+    num_steps = result_decomp.shape[-1]
 
     # Step 2: find the leaking corners, where the two subsystem values are close (|V1 - V2| < delta)
     if delta is None:
@@ -110,45 +151,49 @@ def local_update_hcl_from_file(decomp_file, data_init_upper, data_init_lower, tr
     leaking = abs(data_init_upper - data_init_lower) < delta
     print(f"The number of leaking corner points: {leaking.sum()} / {data_init.size}")
 
-    # Step 3: build the HeteroCL kernel and its inputs
+    # Step 3: build the HeteroCL kernel and copy all inputs to HeteroCL arrays once
     hcl.init(hcl.Float(32))
     sys = DubinsCar(wMax=1, speed=1, uMode="max", dMode="min")
     start = time.time()
-    kernel = build_local_update_kernel(sys, grid)
+    kernel = build_local_update_kernel(sys, grid, num_steps, threshold)
     print(f"HeteroCL build time: {time.time() - start:.4f} seconds")
 
     x1 = hcl.asarray(np.reshape(grid.vs[0], grid.pts_each_dim[0]))
     x2 = hcl.asarray(np.reshape(grid.vs[1], grid.pts_each_dim[1]))
     x3 = hcl.asarray(np.reshape(grid.vs[2], grid.pts_each_dim[2]))
     t_step_hcl = hcl.asarray(np.array([t_step], dtype=np.float32))
+    # Decomposition result with time as the first axis, (t, x, y, theta)
+    V_decomp = hcl.asarray(np.ascontiguousarray(np.moveaxis(result_decomp, -1, 0)))
+    leaking_hcl = hcl.asarray(leaking.astype(np.int32), dtype=hcl.Int())
+    steps = [hcl.asarray(np.array([i], dtype=np.int32), dtype=hcl.Int()) for i in range(num_steps)]
+    # Two value buffers, swapped after each time step
+    V_prev = hcl.asarray(data_init)
     V_new = hcl.asarray(np.zeros(data_init.shape, dtype=np.float32))
+    result_local = np.empty((num_steps,) + data_init.shape, dtype=np.float32)
+    result_local[0] = data_init
 
     # Step 4: local updating loop over time steps
-    result_local = result_decomp.copy()
-    data = data_init
-    total_updated = 0
-
     start = time.time()
 
-    for i in range(1, result_decomp.shape[-1]):
-        t = hcl.asarray(np.array([(i-1)*t_step, i*t_step], dtype=np.float32))
+    for i in range(1, num_steps):
+        # Step 4a: find the update region and update the value function inside it, all in the kernel
+        kernel(V_new, V_prev, V_decomp, leaking_hcl, x1, x2, x3, steps[i], t_step_hcl)
 
-        # Step 4a: update region = leaking corners + corrected points at the previous step and their neighbours
-        corrected = abs(data - result_decomp[..., i-1]) > threshold
-        region = dilate(corrected, grid) | leaking
-
-        # Step 4b: run the parallel kernel, decomposition result outside the region
-        kernel(V_new, hcl.asarray(data), hcl.asarray(np.ascontiguousarray(result_decomp[..., i])),
-               hcl.asarray(region.astype(np.int32), dtype=hcl.Int()), x1, x2, x3, t, t_step_hcl)
-        data = V_new.asnumpy()
-
-        # Step 4c: save the corrected value function of this time step
-        result_local[..., i] = data
-        total_updated += int(region.sum())
+        # Step 4b: save the corrected value function of this time step, then swap the buffers
+        result_local[i] = V_new.asnumpy()
+        V_prev, V_new = V_new, V_prev
 
     execution_time = time.time() - start
     print(f"Total correction time: {execution_time:.4f} seconds")
-    print(f"Total point updates: {total_updated} / {data_init.size * (result_decomp.shape[-1] - 1)}")
+
+    result_local = np.moveaxis(result_local, 0, -1)
+
+    # Number of updated points, recomputed from the results (not part of the timed loop)
+    total_updated = 0
+    for i in range(1, num_steps):
+        corrected = abs(result_local[..., i-1] - result_decomp[..., i-1]) > threshold
+        total_updated += int((dilate(corrected, grid) | leaking).sum())
+    print(f"Total point updates: {total_updated} / {data_init.size * (num_steps - 1)}")
 
     # Step 5: compare the decomposition and local update results with the direct computation
     printCorrectnessStatistics(result_true, result_decomp, result_local)
@@ -173,7 +218,7 @@ def main():
                      "generate both files with the same t_step and accuracy (see README)")
 
     # Step 2: build the 3D grid with the grid size read from the decomposition file, theta is periodic
-    num = np.load(args.decomp_file, mmap_mode='r').shape[0]
+    num = decomp_shape[0]
     grid = Grid(np.array([-4.0, -4.0, -math.pi]), np.array([4.0, 4.0, math.pi]), 3, np.array([num, num, num]), [2])
 
     # Step 3: initial value function of the subsystems, same obstacle as decomposition.py
