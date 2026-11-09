@@ -22,7 +22,7 @@ from local_update_numpy import dilate, get_leaking_set, printCorrectnessStatisti
 
 def build_local_update_kernel(sys, grid, num_steps, threshold):
     '''
-        HeteroCL kernel of one local update time step s:
+        Used by load_or_build_kernel. Returns the compiled HeteroCL kernel of one local update time step s:
             region = leaking corners + points (and their neighbours) where V_prev differs from the
                      decomposition result at step s-1 by more than threshold
             V_new = V_prev + t_step * (H + dissipation)   inside the region
@@ -43,12 +43,13 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
     t_step = hcl.placeholder((1,), name="t_step", dtype=hcl.Float())
 
     def graph_create(V_new, V_prev, V_decomp, leaking, x1, x2, x3, step, t_step):
+        # Computation graph of the kernel, one pass over the grid
         def corrected(a, b, c):
-            # The point was corrected at the previous time step
+            # True if point (a, b, c) was corrected at the previous time step
             return my_abs(V_prev[a, b, c] - V_decomp[step[0] - 1, a, b, c]) > threshold
 
         def mark_neighbours(in_region, i, j, k):
-            # Mark the point if any neighbour along any dimension was corrected (dilation in local_update_numpy.py)
+            # Set in_region if any neighbour along any dimension was corrected (same as dilate in local_update_numpy.py)
             idx = (i, j, k)
             for dim in range(3):
                 n = shape[dim]
@@ -139,10 +140,11 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
 
 def load_or_build_kernel(sys, grid, num_steps, threshold, cache_dir="kernels"):
     '''
-        Load the compiled kernel from cache_dir if it was built before with the same settings,
-        otherwise build it and save it there. The file name includes the grid size, number of time
-        steps, threshold, dynamics parameters and a hash of the kernel source code, so any change
-        builds a new kernel.
+        Used by local_update_hcl_from_file. Load the compiled kernel from cache_dir if it was built
+        before with the same settings, otherwise build it and save it there. The file name includes
+        the grid size, number of time steps, threshold, dynamics parameters and a hash of the kernel
+        source code, so any change builds a new kernel.
+        Returns (kernel, "loaded" or "built").
     '''
     key = repr((tuple(grid.pts_each_dim), tuple(grid.min), tuple(grid.max), tuple(grid.pDim), num_steps, threshold,
                 type(sys).__name__, sys.wMax, sys.speed, sys.uMode, inspect.getsource(build_local_update_kernel)))
@@ -157,9 +159,14 @@ def load_or_build_kernel(sys, grid, num_steps, threshold, cache_dir="kernels"):
 
 def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-6):
     '''
-        Same growing-region local update as local_update_from_file in local_update_numpy.py,
+        Used by main. Same growing-region local update as local_update_from_file in local_update_numpy.py,
         the update of each time step runs in a parallel HeteroCL kernel.
+            decomp_file: npy file of the decomposition result, shape (x, y, theta, t), index 0 of the last axis is t = 0
             leaking: boolean mask of the initial leaking set, see get_leaking_set in local_update_numpy.py
+            grid: odp Grid of the 3D system
+            t_step: time step used to compute decomp_file
+            threshold: a point counts as corrected if it differs from the decomposition by more than this
+        Returns the corrected value function, same shape as the decomposition result.
     '''
     # Step 1: load the decomposition result, the initial value function is the decomposition at t = 0
     result_decomp = np.load(decomp_file).astype(np.float32)
@@ -215,6 +222,10 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-
 
 
 def main():
+    '''
+        Read the decomposition and direct results, run the HeteroCL local update, save the result
+        to results/result_local_hcl_3d.npy and compare it with the direct computation.
+    '''
     # Step 1: parse and check the command-line inputs
     parser = argparse.ArgumentParser()
     parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, theta, t).", required=True)
@@ -224,30 +235,29 @@ def main():
     for path in (args.decomp_file, args.true_file):
         if not os.path.isfile(path):
             parser.error(f"file not found: {path}")
-    decomp_shape = np.load(args.decomp_file, mmap_mode='r').shape
-    true_shape = np.load(args.true_file, mmap_mode='r').shape
-    if decomp_shape != true_shape:
-        parser.error(f"shape mismatch: {args.decomp_file} {decomp_shape} vs {args.true_file} {true_shape}, "
+    result_decomp = np.load(args.decomp_file)
+    result_true = np.load(args.true_file)
+    if result_decomp.shape != result_true.shape:
+        parser.error(f"shape mismatch: {args.decomp_file} {result_decomp.shape} vs {args.true_file} {result_true.shape}, "
                      "generate both files with the same t_step and accuracy (see README)")
 
     # Step 2: build the 3D grid with the grid size read from the decomposition file, theta is periodic
-    num = decomp_shape[0]
+    num = result_decomp.shape[0]
     grid = Grid(np.array([-4.0, -4.0, -math.pi]), np.array([4.0, 4.0, math.pi]), 3, np.array([num, num, num]), [2])
 
     # Step 3: initial leaking set from the subsystem initial values, same obstacle as decomposition.py
     data_init_upper = ShapeRectangle(grid, np.array([-0.5, -np.inf, -np.inf]), np.array([0.5, np.inf, np.inf]))
     data_init_lower = ShapeRectangle(grid, np.array([-np.inf, -0.5, -np.inf]), np.array([np.inf, 0.5, np.inf]))
+    leaking = get_leaking_set(data_init_upper, data_init_lower, result_decomp)
 
     # Step 4: run the local update and save the corrected result
-    leaking = get_leaking_set(data_init_upper, data_init_lower, np.load(args.decomp_file))
     result_local = local_update_hcl_from_file(args.decomp_file, leaking, grid, args.t_step)
     np.save('results/result_local_hcl_3d.npy', result_local)
 
     # Step 5: compare the decomposition and local update results with the direct computation
-    printCorrectnessStatistics(np.load(args.true_file), np.load(args.decomp_file), result_local)
+    printCorrectnessStatistics(result_true, result_decomp, result_local)
 
 
 if __name__ == "__main__":
-    if os.path.exists("results") == False:
-        os.mkdir("results")
+    os.makedirs("results", exist_ok=True)
     main()
