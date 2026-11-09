@@ -33,6 +33,22 @@ The HeteroCL version saves the compiled kernel in `kernels/` on the first run an
 
 Run all commands inside `3d_dubins_union`.
 
+### Computation Time
+
+41 x 41 x 41 grid, 25 time steps (`t_step=0.04`, `accuracy='low'`), 32 CPU threads.
+
+| Method | Time-stepping loop (s) | Total (s) | Points with error > 1e-5 |
+|---|---|---|---|
+| Direct computation (`direct.py`, HJSolver) | 0.046 | 0.177 | — |
+| Local update, HeteroCL (`local_update_hcl.py`), first run | 0.039 | 0.208 | 0 |
+| Local update, HeteroCL (`local_update_hcl.py`), cached kernel | 0.008 | 0.025 | 0 |
+| Local update, numpy (`local_update_numpy.py`) | 11.4 | 11.4 | 4 |
+
+- Time-stepping loop: HJSolver "Total kernel time" for direct computation, "Total correction time" for the local update.
+- Total: the full HJSolver call for direct computation (kernel build + setup + loop); kernel build/load + input copy + loop for the HeteroCL local update.
+- The decomposition result is read from file, so its computation time is not included.
+- Error is measured against the direct computation at the final time step (the decomposition alone has 51323 points with error > 1e-5).
+
 #### Code Structure
 
     local_update_numpy.py
