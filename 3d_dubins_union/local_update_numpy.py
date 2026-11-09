@@ -1,3 +1,5 @@
+# Local update of the 3D Dubins car decomposition result, pure numpy version.
+# Corrects the decomposition result near the leaking corners so it matches the direct computation.
 import argparse
 
 import numpy as np
@@ -22,6 +24,7 @@ np.set_printoptions(precision=5)
 class Frontier:
     '''
         Boolean mask over the 3D grid, used for the frontier and visited sets
+        (only used by CorrectionBasedOnLocalUpdate, which main() does not run)
     '''
     def __init__(self, shape):
         self._shape = tuple(shape)
@@ -129,6 +132,11 @@ def recomputeValueChange(data, x, y, z, grid, sys, t, t_step):
 
 
 class CorrectionBasedOnLocalUpdate:
+    '''
+        Frontier-based correction ported from 2d/local_update_numpy.py. Not used by main():
+        it spreads corrections within one time step, but with forward Euler a point only depends
+        on its neighbours at the previous time step, so it misses points. Use local_update_from_file.
+    '''
     def __init__(
         self,
         result_decomp,

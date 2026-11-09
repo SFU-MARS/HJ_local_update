@@ -1,3 +1,4 @@
+# First order spatial derivatives (left and right) on the 3D grid, used by local_update_numpy.py.
 import numpy as np
 
 '''

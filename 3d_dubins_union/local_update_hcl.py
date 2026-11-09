@@ -1,3 +1,5 @@
+# Local update of the 3D Dubins car decomposition result, parallel HeteroCL version.
+# Same update as local_update_numpy.py; the compiled kernel is cached in kernels/ to skip rebuilding.
 import argparse
 import hashlib
 import inspect

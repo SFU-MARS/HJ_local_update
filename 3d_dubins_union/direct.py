@@ -1,3 +1,5 @@
+# Direct computation of the full 3D Dubins car with HJSolver, used as the ground truth.
+# Saves results/result_direct_3d.npy, shape (x, y, theta, t), index 0 of the last axis is t = 0.
 import numpy as np
 import math
 
