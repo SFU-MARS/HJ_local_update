@@ -1,9 +1,12 @@
 import argparse
+import hashlib
+import inspect
 import math
 import os
 import time
 
 import heterocl as hcl
+from heterocl.tvm import module as hcl_module
 import numpy as np
 
 from odp.Grid import Grid
@@ -132,6 +135,24 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
     return hcl.build(s)
 
 
+def load_or_build_kernel(sys, grid, num_steps, threshold, cache_dir="kernels"):
+    '''
+        Load the compiled kernel from cache_dir if it was built before with the same settings,
+        otherwise build it and save it there. The file name includes the grid size, number of time
+        steps, threshold, dynamics parameters and a hash of the kernel source code, so any change
+        builds a new kernel.
+    '''
+    key = repr((tuple(grid.pts_each_dim), tuple(grid.min), tuple(grid.max), tuple(grid.pDim), num_steps, threshold,
+                type(sys).__name__, sys.wMax, sys.speed, sys.uMode, inspect.getsource(build_local_update_kernel)))
+    path = os.path.join(cache_dir, f"local_update_{hashlib.md5(key.encode()).hexdigest()[:12]}.so")
+    if os.path.isfile(path):
+        return hcl_module.load(path), "loaded"
+    kernel = build_local_update_kernel(sys, grid, num_steps, threshold)
+    os.makedirs(cache_dir, exist_ok=True)
+    kernel.export_library(path)
+    return kernel, "built"
+
+
 def local_update_hcl_from_file(decomp_file, data_init_upper, data_init_lower, true_file, grid, t_step,
                                delta=None, threshold=1e-6):
     '''
@@ -151,12 +172,12 @@ def local_update_hcl_from_file(decomp_file, data_init_upper, data_init_lower, tr
     leaking = abs(data_init_upper - data_init_lower) < delta
     print(f"The number of leaking corner points: {leaking.sum()} / {data_init.size}")
 
-    # Step 3: build the HeteroCL kernel and copy all inputs to HeteroCL arrays once
+    # Step 3: build (or load the cached) HeteroCL kernel and copy all inputs to HeteroCL arrays once
     hcl.init(hcl.Float(32))
     sys = DubinsCar(wMax=1, speed=1, uMode="max", dMode="min")
-    start = time.time()
-    kernel = build_local_update_kernel(sys, grid, num_steps, threshold)
-    print(f"HeteroCL build time: {time.time() - start:.4f} seconds")
+    total_start = time.time()
+    kernel, how = load_or_build_kernel(sys, grid, num_steps, threshold)
+    print(f"HeteroCL kernel {how} in {time.time() - total_start:.4f} seconds")
 
     x1 = hcl.asarray(np.reshape(grid.vs[0], grid.pts_each_dim[0]))
     x2 = hcl.asarray(np.reshape(grid.vs[1], grid.pts_each_dim[1]))
@@ -185,6 +206,7 @@ def local_update_hcl_from_file(decomp_file, data_init_upper, data_init_lower, tr
 
     execution_time = time.time() - start
     print(f"Total correction time: {execution_time:.4f} seconds")
+    print(f"Total local update time (kernel build/load + input copy + correction): {time.time() - total_start:.4f} seconds")
 
     result_local = np.moveaxis(result_local, 0, -1)
 
