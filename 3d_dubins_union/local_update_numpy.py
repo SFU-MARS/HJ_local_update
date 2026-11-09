@@ -314,35 +314,36 @@ def dilate(mask, grid):
     return out
 
 
-def local_update_from_file(decomp_file, data_init_upper, data_init_lower, true_file, grid, sys, t_step,
-                           delta=None, threshold=1e-6):
+def get_leaking_set(data_init_upper, data_init_lower, result_decomp):
+    '''
+        Initial leaking set: points where the two subsystem initial values are close,
+        |V1 - V2| < delta, so the decomposition min(V1, V2) can be wrong there (new_theory_L in 6d_union).
+        delta = max|initial value - final decomposition result|.
+    '''
+    delta = np.max(abs(result_decomp[..., 0] - result_decomp[..., -1]))
+    print('The delta value is', delta)
+    leaking = abs(data_init_upper - data_init_lower) < delta
+    print(f"The number of leaking corner points: {leaking.sum()} / {leaking.size}")
+    return leaking
+
+
+def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e-6):
     '''
         Local updating based on a saved decomposition result
             decomp_file: npy file of the decomposition result, shape (x, y, theta, t), index 0 of the last axis is t = 0
-            data_init_upper, data_init_lower: initial value function of subsystem 1 and 2 on the 3D grid,
-                the initial value function is min(data_init_upper, data_init_lower)
-            true_file: npy file of the direct computation result, same shape as decomp_file
-            delta: threshold for finding the leaking corners, by default max|data_init - final decomposition|
+                (index 0 is the initial value function)
+            leaking: boolean mask of the initial leaking set, shape (x, y, theta), see get_leaking_set
             threshold: a point counts as corrected if it differs from the decomposition by more than this
 
         The update region grows over time: at each time step, the points updated are the leaking
-        corners plus every point (and its neighbours) whose value at the previous time step differs
+        set plus every point (and its neighbours) whose value at the previous time step differs
         from the decomposition result. Every other point keeps the decomposition value.
     '''
-    # Step 1: load the decomposition and direct results, build the full initial value function
+    # Step 1: load the decomposition result, the initial value function is the decomposition at t = 0
     result_decomp = np.load(decomp_file)
-    result_true = np.load(true_file)
-    data_init = np.minimum(data_init_upper, data_init_lower)
+    data_init = result_decomp[..., 0]
 
-    # Step 2: find the leaking corners, where the two subsystem values are close (|V1 - V2| < delta)
-    # and the decomposition min(V1, V2) can be wrong (new_theory_L in 6d_union)
-    if delta is None:
-        delta = np.max(abs(data_init - result_decomp[..., -1]))
-    print('The delta value is', delta)
-    leaking = abs(data_init_upper - data_init_lower) < delta
-    print(f"The number of leaking corner points: {leaking.sum()} / {data_init.size}")
-
-    # Step 3: local updating loop over time steps (pure numpy version)
+    # Step 2: local updating loop over time steps (pure numpy version)
     # data holds the corrected value function at the previous time step, starting from t = 0
     result_local = result_decomp.copy()
     data = data_init.astype(np.float64)
@@ -353,29 +354,26 @@ def local_update_from_file(decomp_file, data_init_upper, data_init_lower, true_f
     for i in range(1, result_decomp.shape[-1]):
         t = np.array([(i-1)*t_step, i*t_step])
 
-        # Step 3a: find the points corrected at the previous time step (different from the decomposition)
+        # Step 2a: find the points corrected at the previous time step (different from the decomposition)
         corrected = abs(data - result_decomp[..., i-1]) > threshold
 
-        # Step 3b: the update region is the leaking corners plus the corrected points and their
+        # Step 2b: the update region is the leaking set plus the corrected points and their
         # neighbours, since the first order scheme at a point reads its neighbours' previous values
         region = dilate(corrected, grid) | leaking
 
-        # Step 3c: start from the decomposition result, then recompute one Euler step inside the region
+        # Step 2c: start from the decomposition result, then recompute one Euler step inside the region
         new_data = result_decomp[..., i].astype(np.float64)
         for x, y, z in np.argwhere(region):
             new_data[x, y, z] = data[x, y, z] + recomputeValueChange(data, x, y, z, grid, sys, t, t_step)
         data = new_data
 
-        # Step 3d: save the corrected value function of this time step
+        # Step 2d: save the corrected value function of this time step
         result_local[..., i] = data
         total_updated += int(region.sum())
 
     execution_time = time.time() - start
     print(f"Total correction time: {execution_time:.4f} seconds")
     print(f"Total point updates: {total_updated} / {data_init.size * (result_decomp.shape[-1] - 1)}")
-
-    # Step 4: compare the decomposition and local update results with the direct computation
-    printCorrectnessStatistics(result_true, result_decomp, result_local)
 
     return result_local
 
@@ -449,14 +447,17 @@ def main():
     num = np.load(args.decomp_file, mmap_mode='r').shape[0]
     grid = Grid(np.array([-4.0, -4.0, -math.pi]), np.array([4.0, 4.0, math.pi]), 3, np.array([num, num, num]), [2])
 
-    # Step 4: initial value function of the subsystems, same obstacle as decomposition.py
+    # Step 4: initial leaking set from the subsystem initial values, same obstacle as decomposition.py
     data_init_upper = ShapeRectangle(grid, np.array([-0.5, -np.inf, -np.inf]), np.array([0.5, np.inf, np.inf]))
     data_init_lower = ShapeRectangle(grid, np.array([-np.inf, -0.5, -np.inf]), np.array([np.inf, 0.5, np.inf]))
+    leaking = get_leaking_set(data_init_upper, data_init_lower, np.load(args.decomp_file))
 
     # Step 5: run the local update and save the corrected result
-    result_local = local_update_from_file(args.decomp_file, data_init_upper, data_init_lower, args.true_file,
-                                          grid, sys, args.t_step)
+    result_local = local_update_from_file(args.decomp_file, leaking, grid, sys, args.t_step)
     np.save('results/result_local_3d.npy', result_local)
+
+    # Step 6: compare the decomposition and local update results with the direct computation
+    printCorrectnessStatistics(np.load(args.true_file), np.load(args.decomp_file), result_local)
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ from odp.dynamics import DubinsCar
 from odp.computeGraphs.CustomGraphFunctions import my_abs, my_max
 from odp.spatialDerivatives.firstOrderENO.first_orderENO3D import spa_derivX, spa_derivY, spa_derivT
 
-from local_update_numpy import dilate, printCorrectnessStatistics
+from local_update_numpy import dilate, get_leaking_set, printCorrectnessStatistics
 
 
 def build_local_update_kernel(sys, grid, num_steps, threshold):
@@ -155,26 +155,18 @@ def load_or_build_kernel(sys, grid, num_steps, threshold, cache_dir="kernels"):
     return kernel, "built"
 
 
-def local_update_hcl_from_file(decomp_file, data_init_upper, data_init_lower, true_file, grid, t_step,
-                               delta=None, threshold=1e-6):
+def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-6):
     '''
         Same growing-region local update as local_update_from_file in local_update_numpy.py,
         the update of each time step runs in a parallel HeteroCL kernel.
+            leaking: boolean mask of the initial leaking set, see get_leaking_set in local_update_numpy.py
     '''
-    # Step 1: load the decomposition and direct results, build the full initial value function
+    # Step 1: load the decomposition result, the initial value function is the decomposition at t = 0
     result_decomp = np.load(decomp_file).astype(np.float32)
-    result_true = np.load(true_file)
-    data_init = np.minimum(data_init_upper, data_init_lower).astype(np.float32)
+    data_init = np.ascontiguousarray(result_decomp[..., 0])
     num_steps = result_decomp.shape[-1]
 
-    # Step 2: find the leaking corners, where the two subsystem values are close (|V1 - V2| < delta)
-    if delta is None:
-        delta = np.max(abs(data_init - result_decomp[..., -1]))
-    print('The delta value is', delta)
-    leaking = abs(data_init_upper - data_init_lower) < delta
-    print(f"The number of leaking corner points: {leaking.sum()} / {data_init.size}")
-
-    # Step 3: build (or load the cached) HeteroCL kernel and copy all inputs to HeteroCL arrays once
+    # Step 2: build (or load the cached) HeteroCL kernel and copy all inputs to HeteroCL arrays once
     hcl.init(hcl.Float(32))
     sys = DubinsCar(wMax=1, speed=1, uMode="max", dMode="min")
     total_start = time.time()
@@ -195,14 +187,14 @@ def local_update_hcl_from_file(decomp_file, data_init_upper, data_init_lower, tr
     result_local = np.empty((num_steps,) + data_init.shape, dtype=np.float32)
     result_local[0] = data_init
 
-    # Step 4: local updating loop over time steps
+    # Step 3: local updating loop over time steps
     start = time.time()
 
     for i in range(1, num_steps):
-        # Step 4a: find the update region and update the value function inside it, all in the kernel
+        # Step 3a: find the update region and update the value function inside it, all in the kernel
         kernel(V_new, V_prev, V_decomp, leaking_hcl, x1, x2, x3, steps[i], t_step_hcl)
 
-        # Step 4b: save the corrected value function of this time step, then swap the buffers
+        # Step 3b: save the corrected value function of this time step, then swap the buffers
         result_local[i] = V_new.asnumpy()
         V_prev, V_new = V_new, V_prev
 
@@ -218,9 +210,6 @@ def local_update_hcl_from_file(decomp_file, data_init_upper, data_init_lower, tr
         corrected = abs(result_local[..., i-1] - result_decomp[..., i-1]) > threshold
         total_updated += int((dilate(corrected, grid) | leaking).sum())
     print(f"Total point updates: {total_updated} / {data_init.size * (num_steps - 1)}")
-
-    # Step 5: compare the decomposition and local update results with the direct computation
-    printCorrectnessStatistics(result_true, result_decomp, result_local)
 
     return result_local
 
@@ -245,14 +234,17 @@ def main():
     num = decomp_shape[0]
     grid = Grid(np.array([-4.0, -4.0, -math.pi]), np.array([4.0, 4.0, math.pi]), 3, np.array([num, num, num]), [2])
 
-    # Step 3: initial value function of the subsystems, same obstacle as decomposition.py
+    # Step 3: initial leaking set from the subsystem initial values, same obstacle as decomposition.py
     data_init_upper = ShapeRectangle(grid, np.array([-0.5, -np.inf, -np.inf]), np.array([0.5, np.inf, np.inf]))
     data_init_lower = ShapeRectangle(grid, np.array([-np.inf, -0.5, -np.inf]), np.array([np.inf, 0.5, np.inf]))
 
     # Step 4: run the local update and save the corrected result
-    result_local = local_update_hcl_from_file(args.decomp_file, data_init_upper, data_init_lower, args.true_file,
-                                              grid, args.t_step)
+    leaking = get_leaking_set(data_init_upper, data_init_lower, np.load(args.decomp_file))
+    result_local = local_update_hcl_from_file(args.decomp_file, leaking, grid, args.t_step)
     np.save('results/result_local_hcl_3d.npy', result_local)
+
+    # Step 5: compare the decomposition and local update results with the direct computation
+    printCorrectnessStatistics(np.load(args.true_file), np.load(args.decomp_file), result_local)
 
 
 if __name__ == "__main__":
