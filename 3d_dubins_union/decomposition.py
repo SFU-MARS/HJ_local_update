@@ -15,7 +15,7 @@ import os
 
 
 def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.05,
-                  obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="medium"):
+                  obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="medium", plot=True):
     r'''
         Decompose the 3D Dubins car
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{theta} = w
@@ -94,9 +94,10 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.05,
     np.save('results/result_decomp_3d.npy', result_full)
 
     # Visualization of 3D value function
-    po = PlotOptions(do_plot=False, plot_type="set", plotDims=[0,1,2], slicesCut=[],colorscale="Bluered", 
-                    save_fig=True, filename="plots/decomposition_result", interactive_html=True)
-    visualize_plots(result_full, g, po)
+    if plot:
+        po = PlotOptions(do_plot=False, plot_type="set", plotDims=[0,1,2], slicesCut=[],colorscale="Bluered",
+                        save_fig=True, filename="plots/decomposition_result", interactive_html=True)
+        visualize_plots(result_full, g, po)
 
     return result_full, result_upper, result_lower, g
 
