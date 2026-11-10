@@ -156,7 +156,7 @@ def load_or_build_kernel(sys, grid, num_steps, threshold, cache_dir="kernels"):
     return kernel, "built"
 
 
-def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-6):
+def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-6, cache_dir="kernels"):
     '''
         Used by main. Same growing-region local update as local_update_from_file in local_update_numpy.py,
         the update of each time step runs in a parallel HeteroCL kernel.
@@ -165,6 +165,8 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-
             grid: odp Grid of the 3D system
             t_step: time step used to compute decomp_file
             threshold: a point counts as corrected if it differs from the decomposition by more than this
+            cache_dir: directory of the compiled kernels, a kernel built before with the same settings
+                       is loaded from here instead of being rebuilt (see load_or_build_kernel)
         Returns the corrected value function, same shape as the decomposition result.
     '''
     # Step 1: load the decomposition result, the initial value function is the decomposition at t = 0
@@ -176,7 +178,7 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-
     hcl.init(hcl.Float(32))
     sys = DubinsCar(wMax=1, speed=1, uMode="max", dMode="min")
     total_start = time.time()
-    kernel, how = load_or_build_kernel(sys, grid, num_steps, threshold)
+    kernel, how = load_or_build_kernel(sys, grid, num_steps, threshold, cache_dir)
     print(f"HeteroCL kernel {how} in {time.time() - total_start:.4f} seconds")
 
     x1 = hcl.asarray(np.reshape(grid.vs[0], grid.pts_each_dim[0]))
@@ -238,6 +240,8 @@ def main():
                         help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
                         "'delta' = |V1 - V2| < delta.")
     parser.add_argument("--t_step", help="Time step used to compute both files.", default=0.04, type=float)
+    parser.add_argument("--cache_dir", help="Directory of the compiled HeteroCL kernels. A kernel built before with the "
+                        "same settings is loaded from here instead of being rebuilt.", default="kernels")
     args = parser.parse_args()
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
         if path is not None and not os.path.isfile(path):
@@ -264,7 +268,7 @@ def main():
     leaking = get_leaking_set(data_init_upper, data_init_lower, result_decomp, grid, args.leaking_mode)
 
     # Step 4: run the local update and save the corrected result
-    result_local = local_update_hcl_from_file(args.decomp_file, leaking, grid, args.t_step)
+    result_local = local_update_hcl_from_file(args.decomp_file, leaking, grid, args.t_step, cache_dir=args.cache_dir)
     np.save('results/result_local_hcl_3d.npy', result_local)
 
     # Step 5: compare the decomposition and local update results with the direct computation (if given)

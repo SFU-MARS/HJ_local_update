@@ -46,6 +46,7 @@ The results are saved to `results/result_local_3d.npy` (numpy) and `results/resu
 | `--init_1`, `--init_2` | no | `results/init_1.npy`, `results/init_2.npy` | Subsystem initial values, used for the leaking set |
 | `--leaking_mode` | no | `smallest` | Initial leaking set, `smallest` or `delta`, see below |
 | `--t_step` | no | `0.04` | Time step used to compute the files |
+| `--cache_dir` | no | `kernels` | HeteroCL version only: directory where compiled kernels are saved and loaded |
 
 ### Leaking Set
 
