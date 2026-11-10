@@ -1,4 +1,3 @@
-import imp
 import numpy as np
 
 from odp.Grid import Grid
@@ -14,7 +13,10 @@ from odp.Plots import *
 from odp.solver import HJSolver
 
 import time
-from compute.config_2d import Config, construct2DGrid
+import argparse
+import os
+
+from compute.config_2d import Config, construct2DGrid, add_compute_args_2d, config_from_compute_args_2d, result_files_2d
 
 
 def direct_computation(config: Config, saveAllTimeStep, debug=False):
@@ -111,3 +113,22 @@ def direct_computation(config: Config, saveAllTimeStep, debug=False):
         return g, data_list
 
     return g, data
+
+
+def main():
+    '''
+        Run the 2d direct computation and save it to results/result_direct_2d_<combine>.npy, shape (x, y, t).
+    '''
+    parser = argparse.ArgumentParser()
+    add_compute_args_2d(parser)
+    args = parser.parse_args()
+    config = config_from_compute_args_2d(parser, args)
+    _, data_list = direct_computation(config=config, saveAllTimeStep=True)
+    os.makedirs(args.results_dir, exist_ok=True)
+    path = result_files_2d(args.combine, args.results_dir)["direct"]
+    np.save(path, np.moveaxis(np.asarray(data_list), 0, -1))
+    print(f"Saved {path}")
+
+
+if __name__ == "__main__":
+    main()

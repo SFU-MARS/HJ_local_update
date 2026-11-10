@@ -52,12 +52,14 @@ Every local update takes the dynamics as input, on the command line or in its pa
 | `quadrotor_6d` | 6 | `dynamics/quadrotor_6d.py` `quadrotor` | `uTMax` (1), `utMax` (1), `dMax` (0) | `subdynamics/quadrotor_6d.py` `subsys_1`, `subsys_2` |
 
 ```bash
+python -m compute.direct_2d --grid_size 101 --combine union --dynamics_params '{"uMax": 1.5}'
+python -m compute.decomposition_2d --grid_size 101 --combine union --dynamics_params '{"uMax": 1.5}'
 python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d.json --dynamics_params '{"uMax": 1.5}'
 ```
 
 - The control mode follows `--combine`: union = avoid (`uMode` `max`), intersection = reach (`uMode` `min`). So `uMode` is not a parameter, and `dMode` defaults to `min`.
-- Where the local update also runs the decomposition (2d, 6d), the subsystems are built from the same name and parameters.
-- The 3d local update reads the direct computation and decomposition from files. Generate them with the same dynamics: `compute/direct_3d.py` and `compute/decomposition_3d.py` use `v = 1`, `wMax = 1`.
+- The decomposition builds the subsystems from the same name and parameters (2d: `compute/decomposition_2d.py`, 6d: inside the local update).
+- The 2d and 3d local updates read the direct computation and decomposition from files, so generate them with the same dynamics. For 2d, give `compute/direct_2d.py` and `compute/decomposition_2d.py` the same `--dynamics_params`. For 3d, `compute/direct_3d.py` and `compute/decomposition_3d.py` use `v = 1`, `wMax = 1`.
 
 To add a system, write its class (with the methods listed at the top of [dynamics/__init__.py](dynamics/__init__.py)) and its subsystem classes, and add an entry to `DYNAMICS`.
 
@@ -179,29 +181,55 @@ The leaking corner issue shows up in two settings, and `--combine` picks which:
 - `union`: V = min(V1, V2), avoid (uMode `max`)
 - `intersection`: V = max(V1, V2), reach (uMode `min`)
 
-The local update runs the direct computation and the decomposition itself (numpy, in `compute/`), then corrects the decomposition and prints the comparison. Nothing is saved. Numpy version:
+First generate the direct and decomposition results. Use the same arguments for both:
 
 ```bash
-python -m numpy_impl.local_update_2d --grid_size 101 --combine union
-python -m numpy_impl.local_update_2d --grid_size 101 --combine intersection
+python -m compute.direct_2d --grid_size 101 --combine union
+python -m compute.decomposition_2d --grid_size 101 --combine union
 ```
-
-HeteroCL version, with a parameter file ([hcl_impl/params/local_update_2d.json](hcl_impl/params/local_update_2d.json)) or the same arguments on the command line:
-
-```bash
-python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d.json
-python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d.json --combine intersection
-```
-
-Both versions correct the same points at every time step: the leaking corners |V1 − V2| < δ, plus the neighbours of every corrected point that changed by more than 1e-6, repeated until no new point joins. The HeteroCL version does this in one kernel per time step, with 64-bit floats like numpy. Its values agree with numpy within 5e-16, since the compiled arithmetic rounds a little differently in the last bit. It saves the compiled kernel in `kernels/` on the first run and loads it on later runs.
 
 | Argument | Default | Description |
 |---|---|---|
-| `--params` | none | HeteroCL version only: JSON parameter file holding the arguments below |
-| `--combine` | `intersection` | `union` or `intersection` (replaces the old `--use_union 1/0`) |
-| `--dynamics` | `coupled_2d` | Dynamics, see [Dynamics](#dynamics) |
-| `--dynamics_params` | `{}` | Parameters of the dynamics, e.g. `{"uMax": 1}` |
 | `--grid_size` | `101` | Grid points per dimension |
+| `--combine` | `intersection` | `union` or `intersection` |
+| `--dynamics`, `--dynamics_params` | `coupled_2d`, `{}` | Dynamics, see [Dynamics](#dynamics). The decomposition builds the subsystems from them |
+| `--t_step` | `0.02` | Time step |
+| `--lookback_length` | `0.2` | Look-back length, `lookback_length / t_step` time steps |
+| `--results_dir` | `results` | Where the files are saved |
+
+This saves to `results/`, all with shape (x, y, t), index 0 of the last axis is t = 0:
+
+- `result_direct_2d_<combine>.npy`: direct computation (ground truth)
+- `result_decomp_2d_<combine>.npy`: decomposition, min(V1, V2) for union, max(V1, V2) for intersection
+- `result_sub1_2d_<combine>.npy`, `result_sub2_2d_<combine>.npy`: subsystem results V1(x) and V2(y) on the 2D grid, used to find the leaking corners at each time step
+
+Then run the local update with a parameter file, numpy version:
+
+```bash
+python -m numpy_impl.local_update_2d --params numpy_impl/params/local_update_2d.json
+```
+
+or the HeteroCL version:
+
+```bash
+python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d.json
+```
+
+The parameter files ([numpy_impl/params/local_update_2d.json](numpy_impl/params/local_update_2d.json), [hcl_impl/params/local_update_2d.json](hcl_impl/params/local_update_2d.json)) point to the union files. For intersection, generate the intersection files and change `_union` to `_intersection` and `"combine"` to `"intersection"` in a copy of the parameter file. The grid size and number of time steps come from the files. The results are saved to `results/result_local_2d_<combine>.npy` (numpy) and `results/result_local_hcl_2d_<combine>.npy` (HeteroCL), shape (x, y, t).
+
+Both versions correct the same points at every time step: the leaking corners |V1 − V2| < δ, plus the neighbours of every corrected point that changed by more than 1e-6, repeated until no new point joins. The HeteroCL version does this in one kernel per time step, with 64-bit floats like numpy. Its values agree with numpy within 5e-16, since the compiled arithmetic rounds a little differently in the last bit. It saves the compiled kernel in `kernels/` on the first run and loads it on later runs.
+
+Arguments of the local updates:
+
+| Argument | Default | Description |
+|---|---|---|
+| `--params` | none | JSON parameter file holding the arguments below |
+| `--decomp_file`, `--sub1_file`, `--sub2_file` | — | Required. Decomposition and subsystem results from `compute/decomposition_2d.py` |
+| `--true_file` | none | Direct computation result. If not given, the local update runs and saves its result without the comparison |
+| `--combine` | `intersection` | `union` or `intersection`, the same as for the files |
+| `--dynamics` | `coupled_2d` | Dynamics, see [Dynamics](#dynamics), the same as for the files |
+| `--dynamics_params` | `{}` | Parameters of the dynamics, e.g. `{"uMax": 1}` |
+| `--t_step` | `0.02` | Time step used to compute the files |
 | `--generate_big_delta` | `2` | `0`: constant `--big_delta`, `1`: from the initial and final decomposition result, `2`: a new δ at each time step |
 | `--big_delta` | `0.2` | δ used when `--generate_big_delta 0` |
 | `--debug` | `0` | `1` prints the stats of each time step |
@@ -231,13 +259,18 @@ It saves `results/result_decomp_6d_union.npy` and `results/result_local_6d_union
 
 ## Code Structure
 
-    numpy_impl/local_update_2d.py
-    ├── compute/direct_2d.py, compute/decomposition_2d.py, compute/config_2d.py
+    compute/direct_2d.py, compute/decomposition_2d.py   (save results/*_2d_<combine>.npy)
+    ├── compute/config_2d.py
     ├── dynamics/ (--dynamics, default coupled_2d), subdynamics/coupled_2d.py
+    └── common/            (spatial_deriv)
+
+    numpy_impl/local_update_2d.py   (reads the saved 2d results)
+    ├── compute/config_2d.py
+    ├── dynamics/ (--dynamics, default coupled_2d)
     └── common/            (spatial_deriv, stats, combine)
 
-    hcl_impl/local_update_2d.py
-    ├── compute/direct_2d.py, compute/decomposition_2d.py, compute/config_2d.py
+    hcl_impl/local_update_2d.py   (reads the saved 2d results)
+    ├── compute/config_2d.py
     ├── dynamics/ (--dynamics, default coupled_2d: opt_ctrl, dynamics in HeteroCL)
     ├── hcl_impl/kernel_cache.py
     └── common/            (spatial_deriv, stats, params, combine)

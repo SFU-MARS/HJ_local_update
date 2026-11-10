@@ -1,4 +1,3 @@
-import imp
 from pprint import pprint
 import numpy as np
 
@@ -10,7 +9,10 @@ from common.spatial_deriv import spa_deriv
 
 # Plot Options
 from odp.Plots import *
-from compute.config_2d import Config, construct1DGrid, construct2DGrid
+import argparse
+import os
+
+from compute.config_2d import Config, construct1DGrid, construct2DGrid, add_compute_args_2d, config_from_compute_args_2d, result_files_2d
 import time
 
 
@@ -169,3 +171,25 @@ def combine_subsystem_results_all_time_steps(
     else:
         result_full = np.maximum(result_upper, result_lower)
     return result_full, result_upper, result_lower
+
+
+def main():
+    '''
+        Run the 2d decomposition and save, all with shape (x, y, t):
+            results/result_decomp_2d_<combine>.npy: V = min (union) or max (intersection) of V1, V2
+            results/result_sub1_2d_<combine>.npy, results/result_sub2_2d_<combine>.npy: V1(x), V2(y) on the 2D grid
+    '''
+    parser = argparse.ArgumentParser()
+    add_compute_args_2d(parser)
+    args = parser.parse_args()
+    config = config_from_compute_args_2d(parser, args)
+    result = decomposition(config=config, saveAllTimeStep=True)
+    os.makedirs(args.results_dir, exist_ok=True)
+    files = result_files_2d(args.combine, args.results_dir)
+    for key, data in (("decomp", result.combined()), ("sub1", result.subsystem1()), ("sub2", result.subsystem2())):
+        np.save(files[key], np.moveaxis(np.asarray(data), 0, -1))
+        print(f"Saved {files[key]}")
+
+
+if __name__ == "__main__":
+    main()

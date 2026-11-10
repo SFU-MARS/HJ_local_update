@@ -127,9 +127,12 @@ def initConfig(use_union: bool,
                generate_big_delta: int,
                big_delta: float,
                dynamics: str = "coupled_2d",
-               dynamics_params: dict = None) -> Config:
+               dynamics_params: dict = None,
+               t_step: float = 0.02,
+               lookback_length: float = 0.20) -> Config:
     '''
-        Config of the 2d case. Used by numpy_impl/local_update_2d.py and hcl_impl/local_update_2d.py.
+        Config of the 2d case. Used by compute/direct_2d.py, compute/decomposition_2d.py and the 2d local updates.
+            t_step, lookback_length: time step and look-back length, lookback_length / t_step time steps
             dynamics, dynamics_params: full system dynamics by name and its parameters (see dynamics/__init__.py);
                 the subsystem dynamics of the decomposition are built from the same name and parameters.
                 Union uses uMode='max' (avoid), intersection uses uMode='min' (reach).
@@ -140,8 +143,8 @@ def initConfig(use_union: bool,
 
     return Config(
         number_of_grid_points=grid_size,
-        lookback_length=0.20,
-        time_step=0.02,
+        lookback_length=lookback_length,
+        time_step=t_step,
         small_number=1e-5,
         sys_2d=sys_2d,
         subsys_1d=subsys_1d,
@@ -151,3 +154,146 @@ def initConfig(use_union: bool,
         generate_big_delta=generate_big_delta,
         big_delta=big_delta,
     )
+
+
+def result_files_2d(combine, results_dir="results"):
+    '''
+        Names of the saved 2d results, all with time as the last axis, shape (x, y, t):
+            direct: direct computation (compute/direct_2d.py)
+            decomp: decomposition V = min or max(V1, V2) (compute/decomposition_2d.py)
+            sub1, sub2: subsystem results V1, V2 on the 2D grid (compute/decomposition_2d.py)
+    '''
+    return {
+        "direct": f"{results_dir}/result_direct_2d_{combine}.npy",
+        "decomp": f"{results_dir}/result_decomp_2d_{combine}.npy",
+        "sub1": f"{results_dir}/result_sub1_2d_{combine}.npy",
+        "sub2": f"{results_dir}/result_sub2_2d_{combine}.npy",
+    }
+
+
+def load_results_2d(decomp_file, sub1_file, sub2_file, true_file=None):
+    '''
+        Used by the 2d local updates. Load the saved results (time as the last axis) and return them with
+        time as the first axis, as the 2d code uses them:
+            (DecompositionResult, direct computation result or None)
+        Raises ValueError if the shapes do not match.
+    '''
+    from compute.decomposition_2d import DecompositionResult
+    decomp = np.load(decomp_file)
+    sub1 = np.load(sub1_file)
+    sub2 = np.load(sub2_file)
+    for path, data in ((sub1_file, sub1), (sub2_file, sub2)):
+        if data.shape != decomp.shape:
+            raise ValueError(f"shape mismatch: {path} {data.shape} vs {decomp_file} {decomp.shape}, "
+                             "generate them with the same compute/decomposition_2d.py run")
+    result_true = None
+    if true_file is not None:
+        result_true = np.load(true_file)
+        if result_true.shape != decomp.shape:
+            raise ValueError(f"shape mismatch: {true_file} {result_true.shape} vs {decomp_file} {decomp.shape}, "
+                             "generate both with the same grid_size, t_step and lookback_length")
+        result_true = np.moveaxis(result_true, -1, 0).copy()
+    decomposition_result = DecompositionResult(
+        upper_subsystem_results=np.moveaxis(sub1, -1, 0).copy(),
+        lower_subsystem_results=np.moveaxis(sub2, -1, 0).copy(),
+        combined_results=np.moveaxis(decomp, -1, 0).copy(),
+    )
+    return decomposition_result, result_true
+
+
+def add_compute_args_2d(parser):
+    '''
+        Arguments of compute/direct_2d.py and compute/decomposition_2d.py. Use the same values for both,
+        the local update reads the grid size and number of time steps from the saved files.
+    '''
+    from dynamics import add_dynamics_args
+    parser.add_argument("--grid_size", type=int, default=101, help="Grid points per dimension, e.g. 101 for 101x101.")
+    parser.add_argument("--combine", choices=["union", "intersection"], default="intersection",
+                        help="union = min(V1, V2) with uMode max (avoid), intersection = max(V1, V2) with uMode min (reach).")
+    parser.add_argument("--t_step", type=float, default=0.02, help="Time step.")
+    parser.add_argument("--lookback_length", type=float, default=0.20, help="Look-back length, lookback_length / t_step time steps.")
+    parser.add_argument("--results_dir", default="results", help="Directory of the saved results.")
+    add_dynamics_args(parser, default="coupled_2d")
+
+
+def config_from_compute_args_2d(parser, args):
+    '''
+        Config from the arguments of add_compute_args_2d.
+    '''
+    try:
+        config = initConfig(use_union=args.combine == "union", grid_size=args.grid_size, generate_big_delta=2,
+                            big_delta=0.2, dynamics=args.dynamics, dynamics_params=args.dynamics_params,
+                            t_step=args.t_step, lookback_length=args.lookback_length)
+    except (ValueError, TypeError) as e:
+        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
+    print(f"combine: {args.combine}, grid size: {args.grid_size} x {args.grid_size}, "
+          f"time steps: {len(config._tau) - 1} (t_step {args.t_step}, lookback_length {args.lookback_length})")
+    print(f"Dynamics: {args.dynamics} {vars(config._sys_2d)}")
+    return config
+
+
+def add_local_update_args_2d(parser):
+    '''
+        Arguments shared by numpy_impl/local_update_2d.py and hcl_impl/local_update_2d.py.
+    '''
+    from dynamics import add_dynamics_args
+    parser.add_argument("--params", default=None,
+                        help="JSON parameter file, its keys are the argument names below without '--'. "
+                        "Arguments given on the command line override the file.")
+    parser.add_argument("--decomp_file", default=None,
+                        help="Decomposition result from compute/decomposition_2d.py, shape (x, y, t). Required.")
+    parser.add_argument("--sub1_file", default=None,
+                        help="Subsystem 1 result V1 from compute/decomposition_2d.py, shape (x, y, t). Required.")
+    parser.add_argument("--sub2_file", default=None,
+                        help="Subsystem 2 result V2 from compute/decomposition_2d.py, shape (x, y, t). Required.")
+    parser.add_argument("--true_file", default=None,
+                        help="Optional direct computation result from compute/direct_2d.py, shape (x, y, t). "
+                        "If not given, the local update runs without the comparison.")
+    parser.add_argument("--combine", choices=["union", "intersection"], default="intersection",
+                        help="union = min(V1, V2) with uMode max (avoid), intersection = max(V1, V2) with uMode min "
+                        "(reach). Use the same as for the files.")
+    parser.add_argument("--t_step", type=float, default=0.02, help="Time step used to compute the files.")
+    parser.add_argument("--generate_big_delta", type=int, choices=[0, 1, 2], default=2,
+                        help="0: constant --big_delta. 1: from the initial and final decomposition result. "
+                        "2: a new big_delta at each time step (as described in the paper).")
+    parser.add_argument("--big_delta", type=float, default=0.2, help="big_delta used with --generate_big_delta 0.")
+    parser.add_argument("--debug", type=int, choices=[0, 1], default=0, help="1 prints the stats of each time step.")
+    add_dynamics_args(parser, default="coupled_2d")
+
+
+def setup_local_update_2d(parser, args):
+    '''
+        Check the arguments of add_local_update_args_2d, load the files and build the config, with the grid
+        size and number of time steps read from the decomposition file.
+        Returns (config, DecompositionResult, direct computation result or None), time as the first axis.
+    '''
+    import os
+    for key in ("decomp_file", "sub1_file", "sub2_file"):
+        if getattr(args, key) is None:
+            parser.error(f"--{key} is required (on the command line or in --params)")
+    for path in (args.decomp_file, args.sub1_file, args.sub2_file, args.true_file):
+        if path is not None and not os.path.isfile(path):
+            parser.error(f"file not found: {path}")
+    try:
+        decomposition_result, result_true = load_results_2d(args.decomp_file, args.sub1_file, args.sub2_file, args.true_file)
+    except ValueError as e:
+        parser.error(str(e))
+    num_steps, nx, ny = np.shape(decomposition_result.combined())
+    if nx != ny:
+        parser.error(f"{args.decomp_file}: the 2d grid must be square, got {nx} x {ny}")
+    try:
+        config = initConfig(use_union=args.combine == "union", grid_size=nx,
+                            generate_big_delta=args.generate_big_delta, big_delta=args.big_delta,
+                            dynamics=args.dynamics, dynamics_params=args.dynamics_params,
+                            t_step=args.t_step, lookback_length=args.t_step * (num_steps - 1))
+    except (ValueError, TypeError) as e:
+        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
+    if len(config._tau) != num_steps:
+        parser.error(f"{args.decomp_file} has {num_steps} time steps, which does not fit --t_step {args.t_step}")
+    print(f"combine: {args.combine}")
+    print(f"generate_big_delta: {args.generate_big_delta}")
+    print(f"Grid size: {nx} x {ny}")
+    print(f"Dynamics: {args.dynamics} {vars(config._sys_2d)}")
+    print(f"Number of time_steps: {num_steps - 1}")
+    print("")
+    return config, decomposition_result, result_true

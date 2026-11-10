@@ -1,10 +1,10 @@
 import argparse
-from compute.direct_2d import direct_computation
-from compute.decomposition_2d import decomposition, DecompositionResult
+from compute.decomposition_2d import DecompositionResult
 
 import numpy as np
 import heterocl as hcl
 import copy
+import os
 # import cv2
 import sys as py_sys
 
@@ -16,8 +16,8 @@ import plotly.express as px
 
 from odp.Grid import Grid
 from odp.Shapes import *
-from compute.config_2d import Config, construct2DGrid, Frontier, initConfig
-from dynamics import add_dynamics_args
+from compute.config_2d import Config, construct2DGrid, Frontier, add_local_update_args_2d, setup_local_update_2d
+from common.params import parse_args_with_params
 from common.combine import check_combine
 from common.stats import compareArrays, printCorrectnessStatistics2d
 
@@ -462,98 +462,23 @@ def printResults(result_list):
         i += 1
 
 def main():
-    # Initializtion
+    '''
+        Read the saved 2d results (compute/direct_2d.py, compute/decomposition_2d.py), run the numpy local
+        update, save it to results/result_local_2d_<combine>.npy (shape (x, y, t)) and compare it with the
+        direct computation if --true_file is given.
+    '''
+    # Step 1: inputs, from the command line and/or the --params file
     parser = argparse.ArgumentParser()
-    parser.add_argument("--combine",
-                        help="How the subsystems are combined: 'union' = min(V1, V2), 'intersection' = max(V1, V2). "
-                        "Default intersection.",
-                        choices=["union", "intersection"],
-                        default="intersection",
-                        )
-    parser.add_argument("--grid_size", 
-                        help = "Size of the 2D grid. For example, use --grid_size=101 for a 101x101 grid.", 
-                        nargs="?",
-                        default=101,
-                        const="",
-                        type=int,
-                        )    
-    parser.add_argument("--generate_big_delta", 
-                        help = "Set this argument to"
-                        "0 if you want to use the constant big_delta specified by the --big_delta arguments. Useful for testing purposes."
-                        "1 if you want to use static big_delta based on initial and final decomposition result. "
-                        "2 if you want to use dynamic big_delta for each time_step (as described in paper).", 
-                        nargs="?",
-                        default=2,
-                        const="",
-                        type=int,
-                        )
-    parser.add_argument("--big_delta", 
-                        help = "The value of big_delta to be used for finding the approximated leaking corners.", 
-                        nargs="?",
-                        default=0.2,
-                        type=float,
-                        const="",
-                        )    
-    parser.add_argument("--debug", 
-                        help = "Debug Mode. Set to 1 for printing debug logs.", 
-                        nargs="?",
-                        default=False,
-                        const="",
-                        type=int,
-                        )    
-    add_dynamics_args(parser, default="coupled_2d")
-
-    args = parser.parse_args()
+    add_local_update_args_2d(parser)
+    args = parse_args_with_params(parser)
     check_combine(args.combine, ("union", "intersection"), "2d")
-    use_union: bool = args.combine == "union"
-    grid_size: int = int(args.grid_size)
-    generate_big_delta: int = int(args.generate_big_delta)
-    big_delta: float = float(args.big_delta)
-    use_debug: bool = bool(args.debug)
-    print(f"combine: {args.combine}")
-    print(f"generate_big_delta: {generate_big_delta}")
-    print(f"Grid size: {grid_size} x {grid_size}")
-    print(f"use_debug: {use_debug}")
-    if generate_big_delta == 0:
-        print(f"Using static big_delta = {big_delta} for each timestep")
-    elif generate_big_delta == 1:
-        print(f"Generating big_delta something")
-    else:
-        print(f"Generating big_delta at each timestep")
-        
-    
-    
-    try:
-        config = initConfig(use_union=use_union, grid_size=grid_size, generate_big_delta=generate_big_delta, big_delta=big_delta,
-                            dynamics=args.dynamics, dynamics_params=args.dynamics_params)
-    except (ValueError, TypeError) as e:
-        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
-    print(f"Dynamics: {args.dynamics} {vars(config._sys_2d)}")
-    print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
-    print("")
+    use_debug = bool(args.debug)
+    config, decomposition_result, result_true = setup_local_update_2d(parser, args)
 
-    # Perform direct computation and decomposition
-    grid, result_true = direct_computation(
-        config=config,
-        saveAllTimeStep=True,
-        # lookback_length=config._lookback_length,
-    )
-    print("")
-    decomposition_result: DecompositionResult = decomposition(
-        config=config,
-        saveAllTimeStep=True,
-    )
-    # Initialize the value function
-    data_init = config.value_function_2d(grid=grid)
-
-    direct_computation_final = result_true[-1]
-    decomp_final = decomposition_result.combined()[-1]
-    
-    count = 0
+    # Step 2: local update (changes decomposition_result in place, so keep a copy for the comparison)
     decomposition_result_copy = copy.deepcopy(decomposition_result)
-
     local_update = CorrectionBasedOnLocalUpdate(
-        decomposition_result=decomposition_result, 
+        decomposition_result=decomposition_result,
         true_result=result_true,
         config=config,
     )
@@ -566,13 +491,23 @@ def main():
     print(f"Total points identified: {local_update._perf_stats.totalPointsIdentified()}")
     print(f"Total points corrected: {local_update._perf_stats.totalPointsCorrected()}")
 
-    print("")
-    printCorrectnessStatistics2d(
-        direct_computation_results=result_true,
-        decomposition_results=decomposition_result_copy,
-        corrected_decomposition_results=decomposition_result,
-    )
+    # Step 3: save the corrected result, time as the last axis
+    os.makedirs("results", exist_ok=True)
+    path = f"results/result_local_2d_{args.combine}.npy"
+    np.save(path, np.moveaxis(np.asarray(decomposition_result.combined()), 0, -1))
+    print(f"Saved {path}")
 
-    
+    # Step 4: compare with the direct computation (if given)
+    print("")
+    if result_true is not None:
+        printCorrectnessStatistics2d(
+            direct_computation_results=result_true,
+            decomposition_results=decomposition_result_copy,
+            corrected_decomposition_results=decomposition_result,
+        )
+    else:
+        print("No --true_file given, skipping the comparison with the direct computation")
+
+
 if __name__ == "__main__":
     main()

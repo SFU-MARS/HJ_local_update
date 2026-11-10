@@ -11,10 +11,8 @@ import heterocl as hcl
 from heterocl import tvm
 import numpy as np
 
-from compute.config_2d import initConfig
-from compute.decomposition_2d import decomposition, DecompositionResult
-from compute.direct_2d import direct_computation
-from dynamics import add_dynamics_args
+from compute.config_2d import add_local_update_args_2d, setup_local_update_2d
+from compute.decomposition_2d import DecompositionResult
 from common.combine import check_combine
 from common.params import parse_args_with_params
 from common.stats import printCorrectnessStatistics2d
@@ -221,59 +219,45 @@ def local_update_hcl(decomposition_result: DecompositionResult, config, cache_di
 
 
 def main():
-    # Step 1: parse the inputs (from the command line and/or the --params file)
+    '''
+        Read the saved 2d results (compute/direct_2d.py, compute/decomposition_2d.py), run the HeteroCL local
+        update, save it to results/result_local_hcl_2d_<combine>.npy (shape (x, y, t)) and compare it with the
+        direct computation if --true_file is given.
+    '''
+    # Step 1: inputs, from the command line and/or the --params file
     parser = argparse.ArgumentParser()
-    parser.add_argument("--params", help="JSON parameter file (see hcl_impl/params/), its keys are the argument names below "
-                        "without '--'. Arguments given on the command line override the file.", default=None)
-    parser.add_argument("--combine", choices=["union", "intersection"], default="intersection",
-                        help="How the subsystems are combined: 'union' = min(V1, V2) with uMode='max' (avoid), "
-                        "'intersection' = max(V1, V2) with uMode='min' (reach). Default intersection.")
-    parser.add_argument("--grid_size", type=int, default=101,
-                        help="Size of the 2D grid. For example, use --grid_size 101 for a 101x101 grid.")
-    parser.add_argument("--generate_big_delta", type=int, choices=[0, 1, 2], default=2,
-                        help="0: constant --big_delta. 1: from the initial and final decomposition result. "
-                        "2: a new big_delta at each time step (as described in the paper).")
-    parser.add_argument("--big_delta", type=float, default=0.2,
-                        help="big_delta used with --generate_big_delta 0.")
-    parser.add_argument("--debug", type=int, choices=[0, 1], default=0, help="1 prints the stats of each time step.")
+    add_local_update_args_2d(parser)
     parser.add_argument("--cache_dir", default="kernels",
                         help="Directory of the compiled HeteroCL kernels. A kernel built before with the same "
                         "settings is loaded from here instead of being rebuilt.")
-    add_dynamics_args(parser, default="coupled_2d")
     args = parse_args_with_params(parser)
     check_combine(args.combine, ("union", "intersection"), "2d")
-    print(f"combine: {args.combine}")
-    print(f"generate_big_delta: {args.generate_big_delta}")
-    print(f"Grid size: {args.grid_size} x {args.grid_size}")
+    config, decomposition_result, result_true = setup_local_update_2d(parser, args)
 
-    # Step 2: direct computation and decomposition (numpy, same as the numpy version)
-    try:
-        config = initConfig(use_union=args.combine == "union", grid_size=args.grid_size, generate_big_delta=args.generate_big_delta, big_delta=args.big_delta,
-                            dynamics=args.dynamics, dynamics_params=args.dynamics_params)
-    except (ValueError, TypeError) as e:
-        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
-    print(f"Dynamics: {args.dynamics} {vars(config._sys_2d)}")
-    print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
-    print("")
-    grid, result_true = direct_computation(config=config, saveAllTimeStep=True)
-    print("")
-    decomposition_result = decomposition(config=config, saveAllTimeStep=True)
-
-    # Step 3: HeteroCL local update
+    # Step 2: HeteroCL local update
     result_local, total_identified, total_corrected = local_update_hcl(
         decomposition_result, config, cache_dir=args.cache_dir, debug=bool(args.debug))
     print(f"Total points identified: {total_identified}")
     print(f"Total points corrected: {total_corrected}")
 
-    # Step 4: compare with the direct computation, same printout as the numpy version
-    corrected_result = copy.copy(decomposition_result)
-    corrected_result._combined_results = result_local
+    # Step 3: save the corrected result, time as the last axis
+    os.makedirs("results", exist_ok=True)
+    path = f"results/result_local_hcl_2d_{args.combine}.npy"
+    np.save(path, np.moveaxis(result_local, 0, -1))
+    print(f"Saved {path}")
+
+    # Step 4: compare with the direct computation (if given), same printout as the numpy version
     print("")
-    printCorrectnessStatistics2d(
-        direct_computation_results=result_true,
-        decomposition_results=decomposition_result,
-        corrected_decomposition_results=corrected_result,
-    )
+    if result_true is not None:
+        corrected_result = copy.copy(decomposition_result)
+        corrected_result._combined_results = result_local
+        printCorrectnessStatistics2d(
+            direct_computation_results=result_true,
+            decomposition_results=decomposition_result,
+            corrected_decomposition_results=corrected_result,
+        )
+    else:
+        print("No --true_file given, skipping the comparison with the direct computation")
 
 
 if __name__ == "__main__":
