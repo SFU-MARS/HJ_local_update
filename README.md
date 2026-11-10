@@ -48,8 +48,8 @@ First generate the direct and decomposition results (both default to `accuracy='
 python -c "
 from compute.direct_3d import direct_comp
 from compute.decomposition_3d import decomposition
-direct_comp(41, plot=False)
-decomposition(41, plot=False)
+direct_comp(41, plot=False, combine='union')
+decomposition(41, plot=False, combine='union')
 "
 ```
 
