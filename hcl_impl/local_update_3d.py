@@ -16,6 +16,7 @@ from odp.dynamics import DubinsCar
 from odp.computeGraphs.CustomGraphFunctions import my_abs, my_max
 from odp.spatialDerivatives.firstOrderENO.first_orderENO3D import spa_derivX, spa_derivY, spa_derivT
 
+from common.combine import check_combine
 from numpy_impl.local_update_3d import dilate, get_leaking_set, parse_args_with_params, printCorrectnessStatistics
 
 
@@ -225,7 +226,7 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-
 def main():
     '''
         Read the decomposition and direct results, run the HeteroCL local update, save the result
-        to results/result_local_hcl_3d.npy and compare it with the direct computation.
+        to results/result_local_hcl_3d_<combine>.npy and compare it with the direct computation.
     '''
     # Step 1: parse and check the command-line inputs
     parser = argparse.ArgumentParser()
@@ -236,9 +237,12 @@ def main():
     parser.add_argument("--true_file", help="Optional npy file of the direct computation result, same shape as --decomp_file. "
                         "If not given, the local update runs without the comparison.", default=None)
     parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1, shape (x, y, theta), "
-                        "saved by compute/decomposition_3d.py.", default="results/init_1.npy")
+                        "saved by compute/decomposition_3d.py.", default="results/init_1_3d.npy")
     parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2, shape (x, y, theta), "
-                        "saved by compute/decomposition_3d.py.", default="results/init_2.npy")
+                        "saved by compute/decomposition_3d.py.", default="results/init_2_3d.npy")
+    parser.add_argument("--combine", choices=["union", "intersection"], default="union",
+                        help="How the subsystems are combined: 'union' = min(V1, V2), 'intersection' = max(V1, V2). "
+                        "Only union is implemented for 3d.")
     parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
                         help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
                         "'delta' = |V1 - V2| < delta.")
@@ -249,6 +253,10 @@ def main():
     args = parse_args_with_params(parser)
     if args.decomp_file is None:
         parser.error("--decomp_file is required (on the command line or in --params)")
+    try:
+        check_combine(args.combine, ("union",), "3d")
+    except NotImplementedError as e:
+        parser.error(str(e))
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
         if path is not None and not os.path.isfile(path):
             parser.error(f"file not found: {path}")
@@ -275,7 +283,7 @@ def main():
 
     # Step 4: run the local update and save the corrected result
     result_local = local_update_hcl_from_file(args.decomp_file, leaking, grid, args.t_step, cache_dir=args.cache_dir)
-    np.save('results/result_local_hcl_3d.npy', result_local)
+    np.save(f'results/result_local_hcl_3d_{args.combine}.npy', result_local)
 
     # Step 5: compare the decomposition and local update results with the direct computation (if given)
     if result_true is not None:

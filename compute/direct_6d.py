@@ -15,8 +15,15 @@ from odp.solver import HJSolver
 
 import time
 
+from common.combine import check_combine
 
-def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02):
+
+def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02, combine="union"):
+    '''
+        Direct computation of the 6D quadrotor, used as the ground truth.
+            combine: "union" (only union is implemented for 6d)
+    '''
+    check_combine(combine, ("union",), "6d")
 
 # num = 101
 # saveAllTimeStep = True

@@ -1,5 +1,5 @@
 # Direct computation of the full 3D Dubins car with HJSolver, used as the ground truth.
-# Saves results/result_direct_3d.npy, shape (x, y, theta, t), index 0 of the last axis is t = 0.
+# Saves results/result_direct_3d_union.npy, shape (x, y, theta, t), index 0 of the last axis is t = 0.
 import numpy as np
 import math
 
@@ -14,16 +14,23 @@ from odp.Plots import visualize_plots
 import time
 import os
 
+from common.combine import check_combine
+
 
 def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
-                obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="low", plot=True):
+                obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="low", plot=True,
+                combine="union"):
     r'''
         Directly solve the 3D Dubins car
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{theta} = w
         with the optimized_dp HJSolver (uMode='max', avoiding the obstacle). The obstacle is
         the same as in decomposition_3d.py: the union of the rectangles
         x_min <= x <= x_max and y_min <= y <= y_max (theta unbounded).
+            combine: "union" (only union is implemented for 3d)
+        Saves results/result_direct_3d_<combine>.npy.
     '''
+    check_combine(combine, ("union",), "3d")
+
     # Create 3D grid, theta is periodic
     grid_min = np.array([-4.0, -4.0, -math.pi])
     grid_max = np.array([4.0, 4.0, math.pi])
@@ -61,7 +68,7 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     print("Finished updating the value function")
 
     os.makedirs('results', exist_ok=True)
-    np.save('results/result_direct_3d.npy', result)
+    np.save(f'results/result_direct_3d_{combine}.npy', result)
 
     # Visualization of 3D value function
     if plot:

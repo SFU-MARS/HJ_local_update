@@ -11,8 +11,17 @@ from common.spatial_deriv_6d import spa_deriv4X1, spa_deriv4X2, spa_deriv4X3, sp
 # Plot Options
 from odp.Plots import *
 import time
+import os
 
-def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
+from common.combine import check_combine
+
+def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="union"):
+    '''
+        Decomposition of the 6D quadrotor into two 4D subsystems, combined as min(V1, V2).
+            combine: "union" (only union is implemented for 6d)
+        Saves results/result_decomp_6d_<combine>.npy.
+    '''
+    check_combine(combine, ("union",), "6d")
     # num = 51  
     # Create Grid
     grid_min = np.array([-1.0, -2.0, -2.0, -2.0])
@@ -199,7 +208,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02):
     print("Total kernel time decomposition: ", execution_time)
     print("Finished updating the value function")
     
-    np.save('result_decomp_6d_002.npy', result_full)
+    os.makedirs('results', exist_ok=True)
+    np.save(f'results/result_decomp_6d_{combine}.npy', result_full)
         
     return result_full, result_upper, result_lower
             

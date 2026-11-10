@@ -11,6 +11,7 @@ import sys as py_sys
 from odp.Grid import Grid
 
 from dynamics.dubins_3d import dubins_car
+from common.combine import check_combine
 
 # The function of computing first order spatial derivative
 from common.spatial_deriv_3d import spa_deriv3X1, spa_deriv3X2, spa_deriv3X3
@@ -217,9 +218,12 @@ def main():
     parser.add_argument("--true_file", help="Optional npy file of the direct computation result, same shape as --decomp_file. "
                         "If not given, the local update runs without the comparison.", default=None)
     parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1, shape (x, y, theta), "
-                        "saved by compute/decomposition_3d.py.", default="results/init_1.npy")
+                        "saved by compute/decomposition_3d.py.", default="results/init_1_3d.npy")
     parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2, shape (x, y, theta), "
-                        "saved by compute/decomposition_3d.py.", default="results/init_2.npy")
+                        "saved by compute/decomposition_3d.py.", default="results/init_2_3d.npy")
+    parser.add_argument("--combine", choices=["union", "intersection"], default="union",
+                        help="How the subsystems are combined: 'union' = min(V1, V2), 'intersection' = max(V1, V2). "
+                        "Only union is implemented for 3d.")
     parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
                         help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
                         "'delta' = |V1 - V2| < delta.")
@@ -230,6 +234,10 @@ def main():
 
     if args.decomp_file is None:
         parser.error("--decomp_file is required (on the command line or in --params)")
+    try:
+        check_combine(args.combine, ("union",), "3d")
+    except NotImplementedError as e:
+        parser.error(str(e))
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
         if path is not None and not os.path.isfile(path):
             parser.error(f"file not found: {path}")
@@ -258,7 +266,7 @@ def main():
 
     # Step 5: run the local update and save the corrected result
     result_local = local_update_from_file(args.decomp_file, leaking, grid, sys, args.t_step)
-    np.save('results/result_local_3d.npy', result_local)
+    np.save(f'results/result_local_3d_{args.combine}.npy', result_local)
 
     # Step 6: compare the decomposition and local update results with the direct computation (if given)
     if args.true_file is not None:

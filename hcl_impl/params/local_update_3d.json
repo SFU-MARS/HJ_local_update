@@ -1,8 +1,9 @@
 {
-    "decomp_file": "results/result_decomp_3d.npy",
-    "true_file": "results/result_direct_3d.npy",
-    "init_1": "results/init_1.npy",
-    "init_2": "results/init_2.npy",
+    "decomp_file": "results/result_decomp_3d_union.npy",
+    "true_file": "results/result_direct_3d_union.npy",
+    "init_1": "results/init_1_3d.npy",
+    "init_2": "results/init_2_3d.npy",
+    "combine": "union",
     "leaking_mode": "smallest",
     "t_step": 0.04,
     "cache_dir": "kernels"

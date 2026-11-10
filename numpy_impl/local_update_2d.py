@@ -19,6 +19,7 @@ from odp.Shapes import *
 from compute.config_2d import Config, construct2DGrid, Frontier
 from dynamics.coupled_2d import couple_u
 from subdynamics.coupled_2d import subsys
+from common.combine import check_combine
 
 # The function of computing first order spatial derivative
 from common.spatial_deriv_2d import spa_derivX, spa_derivY
@@ -578,12 +579,11 @@ def compareArrays(array1, array2, number_of_precision_points=8, debug=False):
 def main():
     # Initializtion
     parser = argparse.ArgumentParser()
-    parser.add_argument("--use_union", 
-                        help = "Set this argument 1 if you want the approximated value function based on union cases. Set it to 1 for approximated value function based on intersection cases", 
-                        nargs="?",
-                        default="0",
-                        const="",
-                        type=int,
+    parser.add_argument("--combine",
+                        help="How the subsystems are combined: 'union' = min(V1, V2), 'intersection' = max(V1, V2). "
+                        "Default intersection.",
+                        choices=["union", "intersection"],
+                        default="intersection",
                         )
     parser.add_argument("--grid_size", 
                         help = "Size of the 2D grid. For example, use --grid_size=101 for a 101x101 grid.", 
@@ -618,12 +618,13 @@ def main():
                         )    
 
     args = parser.parse_args()
-    use_union: bool = bool(args.use_union)
+    check_combine(args.combine, ("union", "intersection"), "2d")
+    use_union: bool = args.combine == "union"
     grid_size: int = int(args.grid_size)
     generate_big_delta: int = int(args.generate_big_delta)
     big_delta: float = float(args.big_delta)
     use_debug: bool = bool(args.debug)
-    print(f"use_union: {use_union}")
+    print(f"combine: {args.combine}")
     print(f"generate_big_delta: {generate_big_delta}")
     print(f"Grid size: {grid_size} x {grid_size}")
     print(f"use_debug: {use_debug}")
