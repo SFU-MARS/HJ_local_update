@@ -1,5 +1,6 @@
 # Decomposition of the 3D Dubins car into two 2D subsystems solved with HJSolver,
-# combined as V = min(V1, V2). Saves results/result_decomp_3d.npy, same shape as direct.py.
+# combined as V = min(V1, V2). Saves results/result_decomp_3d.npy, same shape as direct.py,
+# and the subsystem initial values results/init_1.npy, results/init_2.npy, shape (x, y, theta).
 import numpy as np
 import math
 
@@ -36,6 +37,12 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     # Initialize value function (negative inside the obstacle)
     data_sub_1 = ShapeRectangle(g_1, np.array([obstacle_min[0], -np.inf]), np.array([obstacle_max[0], np.inf]))
     data_sub_2 = ShapeRectangle(g_2, np.array([obstacle_min[1], -np.inf]), np.array([obstacle_max[1], np.inf]))
+
+    # Save the subsystem initial values on the 3D grid (x, y, theta), used for the leaking set
+    # in the local update: init_1 = V1(x, theta), init_2 = V2(y, theta)
+    os.makedirs('results', exist_ok=True)
+    np.save('results/init_1.npy', np.broadcast_to(data_sub_1[:, np.newaxis, :], (num, num, num)))
+    np.save('results/init_2.npy', np.broadcast_to(data_sub_2[np.newaxis, :, :], (num, num, num)))
 
     ## Look-back length and time step of computation
     small_number = 1e-5
@@ -93,7 +100,6 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     print("Total kernel time decomposition: ", execution_time)
     print("Finished updating the value function")
 
-    os.makedirs('results', exist_ok=True)
     np.save('results/result_decomp_3d.npy', result_full)
 
     # Visualization of 3D value function

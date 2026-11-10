@@ -20,14 +20,16 @@ decomposition(41, plot=False)
 Then run the local update, numpy version:
 
 ```bash
-python local_update_numpy.py --decomp_file results/result_decomp_3d.npy --true_file results/result_direct_3d.npy --t_step 0.04
+python local_update_numpy.py --decomp_file results/result_decomp_3d.npy --true_file results/result_direct_3d.npy --init_1 results/init_1.npy --init_2 results/init_2.npy --t_step 0.04
 ```
 
 or the parallel HeteroCL version:
 
 ```bash
-python local_update_hcl.py --decomp_file results/result_decomp_3d.npy --true_file results/result_direct_3d.npy --t_step 0.04
+python local_update_hcl.py --decomp_file results/result_decomp_3d.npy --true_file results/result_direct_3d.npy --init_1 results/init_1.npy --init_2 results/init_2.npy --t_step 0.04
 ```
+
+`init_1.npy` and `init_2.npy` are the subsystem initial values V1(x, θ) and V2(y, θ) on the 3D grid, saved by `decomposition.py`. They are used to find the initial leaking set |V1 − V2| < δ.
 
 The HeteroCL version saves the compiled kernel in `kernels/` on the first run and loads it on later runs.
 

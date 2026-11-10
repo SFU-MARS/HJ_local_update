@@ -8,7 +8,6 @@ import os
 import sys as py_sys
 
 from odp.Grid import Grid
-from odp.Shapes import ShapeRectangle
 
 from system import dubins_car
 
@@ -178,6 +177,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, theta, t).", default=None)
     parser.add_argument("--true_file", help="npy file of the direct computation result, same shape as --decomp_file.", default=None)
+    parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1, shape (x, y, theta), "
+                        "saved by decomposition.py.", default="results/init_1.npy")
+    parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2, shape (x, y, theta), "
+                        "saved by decomposition.py.", default="results/init_2.npy")
     parser.add_argument("--t_step", help="Time step used to compute both files. Keep it below the CFL bound of HJSolver "
                         "(about 0.048 for a 41^3 grid) so that HJSolver takes exactly one Euler step per time step.",
                         default=0.04, type=float)
@@ -187,7 +190,7 @@ def main():
     if missing:
         parser.error(f"need file inputs {' and '.join(missing)} (e.g. --decomp_file results/result_decomp_3d.npy "
                      "--true_file results/result_direct_3d.npy)")
-    for path in (args.decomp_file, args.true_file):
+    for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
         if not os.path.isfile(path):
             parser.error(f"file not found: {path}")
     decomp_shape = np.load(args.decomp_file, mmap_mode='r').shape
@@ -195,6 +198,12 @@ def main():
     if decomp_shape != true_shape:
         parser.error(f"shape mismatch: {args.decomp_file} {decomp_shape} vs {args.true_file} {true_shape}, "
                      "generate both files with the same t_step and accuracy (see README)")
+    data_init_upper = np.load(args.init_1)
+    data_init_lower = np.load(args.init_2)
+    for path, data in ((args.init_1, data_init_upper), (args.init_2, data_init_lower)):
+        if data.shape != decomp_shape[:-1]:
+            parser.error(f"shape mismatch: {path} {data.shape} vs {args.decomp_file} {decomp_shape[:-1]} (without t), "
+                         "generate them with the same decomposition.py run")
 
     # Step 2: set the dynamics, same as the direct computation, control tries to avoid the obstacle
     sys = dubins_car(v=1, wMax=1, dMax=0.0, uMode='max', dMode='min')
@@ -203,9 +212,7 @@ def main():
     num = np.load(args.decomp_file, mmap_mode='r').shape[0]
     grid = Grid(np.array([-4.0, -4.0, -math.pi]), np.array([4.0, 4.0, math.pi]), 3, np.array([num, num, num]), [2])
 
-    # Step 4: initial leaking set from the subsystem initial values, same obstacle as decomposition.py
-    data_init_upper = ShapeRectangle(grid, np.array([-0.5, -np.inf, -np.inf]), np.array([0.5, np.inf, np.inf]))
-    data_init_lower = ShapeRectangle(grid, np.array([-np.inf, -0.5, -np.inf]), np.array([np.inf, 0.5, np.inf]))
+    # Step 4: initial leaking set from the subsystem initial values (--init_1, --init_2)
     leaking = get_leaking_set(data_init_upper, data_init_lower, np.load(args.decomp_file))
 
     # Step 5: run the local update and save the corrected result

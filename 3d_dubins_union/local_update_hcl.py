@@ -12,7 +12,6 @@ from heterocl.tvm import module as hcl_module
 import numpy as np
 
 from odp.Grid import Grid
-from odp.Shapes import ShapeRectangle
 from odp.dynamics import DubinsCar
 from odp.computeGraphs.CustomGraphFunctions import my_abs, my_max
 from odp.spatialDerivatives.firstOrderENO.first_orderENO3D import spa_derivX, spa_derivY, spa_derivT
@@ -230,9 +229,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, theta, t).", required=True)
     parser.add_argument("--true_file", help="npy file of the direct computation result, same shape as --decomp_file.", required=True)
+    parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1, shape (x, y, theta), "
+                        "saved by decomposition.py.", default="results/init_1.npy")
+    parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2, shape (x, y, theta), "
+                        "saved by decomposition.py.", default="results/init_2.npy")
     parser.add_argument("--t_step", help="Time step used to compute both files.", default=0.04, type=float)
     args = parser.parse_args()
-    for path in (args.decomp_file, args.true_file):
+    for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
         if not os.path.isfile(path):
             parser.error(f"file not found: {path}")
     result_decomp = np.load(args.decomp_file)
@@ -240,14 +243,18 @@ def main():
     if result_decomp.shape != result_true.shape:
         parser.error(f"shape mismatch: {args.decomp_file} {result_decomp.shape} vs {args.true_file} {result_true.shape}, "
                      "generate both files with the same t_step and accuracy (see README)")
+    data_init_upper = np.load(args.init_1)
+    data_init_lower = np.load(args.init_2)
+    for path, data in ((args.init_1, data_init_upper), (args.init_2, data_init_lower)):
+        if data.shape != result_decomp.shape[:-1]:
+            parser.error(f"shape mismatch: {path} {data.shape} vs {args.decomp_file} {result_decomp.shape[:-1]} (without t), "
+                         "generate them with the same decomposition.py run")
 
     # Step 2: build the 3D grid with the grid size read from the decomposition file, theta is periodic
     num = result_decomp.shape[0]
     grid = Grid(np.array([-4.0, -4.0, -math.pi]), np.array([4.0, 4.0, math.pi]), 3, np.array([num, num, num]), [2])
 
-    # Step 3: initial leaking set from the subsystem initial values, same obstacle as decomposition.py
-    data_init_upper = ShapeRectangle(grid, np.array([-0.5, -np.inf, -np.inf]), np.array([0.5, np.inf, np.inf]))
-    data_init_lower = ShapeRectangle(grid, np.array([-np.inf, -0.5, -np.inf]), np.array([np.inf, 0.5, np.inf]))
+    # Step 3: initial leaking set from the subsystem initial values (--init_1, --init_2)
     leaking = get_leaking_set(data_init_upper, data_init_lower, result_decomp)
 
     # Step 4: run the local update and save the corrected result
