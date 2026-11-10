@@ -8,3 +8,6 @@ __pycache__/
 *.bash
 todo.txt
 
+plots/
+results/
+3d_dubins_union/kernels/
