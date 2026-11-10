@@ -21,7 +21,7 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
         Directly solve the 3D Dubins car
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{theta} = w
         with the optimized_dp HJSolver (uMode='max', avoiding the obstacle). The obstacle is
-        the same as in decomposition.py: the union of the rectangles
+        the same as in decomposition_3d.py: the union of the rectangles
         x_min <= x <= x_max and y_min <= y <= y_max (theta unbounded).
     '''
     # Create 3D grid, theta is periodic
@@ -43,7 +43,7 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     # Set system dynamics, control tries to avoid the obstacle
     sys = DubinsCar(wMax=1, speed=1, uMode="max", dMode="min")
 
-    # Same computation method as decomposition.py
+    # Same computation method as decomposition_3d.py
     compMethods = {"TargetSetMode": "None"}
 
     start = time.time()

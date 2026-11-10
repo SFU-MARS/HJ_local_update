@@ -1,6 +1,6 @@
 import argparse
-from direct_numpy import direct_computation
-from decomposition_numpy import decomposition, DecompositionResult
+from compute.direct_2d import direct_computation
+from compute.decomposition_2d import decomposition, DecompositionResult
 
 import numpy as np
 import heterocl as hcl
@@ -8,7 +8,7 @@ import copy
 # import cv2
 import sys as py_sys
 
-# from set_2plot import *
+# from common.plotting_2d import *
 from odp.Plots import PlotOptions
 from odp.Plots import plot_isosurface, plot_valuefunction
 
@@ -16,12 +16,12 @@ import plotly.express as px
 
 from odp.Grid import Grid
 from odp.Shapes import *
-from config import Config, construct2DGrid, Frontier
-from system import couple_u
-from subsystem import subsys
+from compute.config_2d import Config, construct2DGrid, Frontier
+from dynamics.coupled_2d import couple_u
+from subdynamics.coupled_2d import subsys
 
 # The function of computing first order spatial derivative
-from update_V_numpy import spa_derivX, spa_derivY
+from common.spatial_deriv_2d import spa_derivX, spa_derivY
 
 import time
 

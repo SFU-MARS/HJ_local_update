@@ -1,5 +1,5 @@
 # Local update of the 3D Dubins car decomposition result, parallel HeteroCL version.
-# Same update as local_update_numpy.py; the compiled kernel is cached in kernels/ to skip rebuilding.
+# Same update as numpy_impl/local_update_3d.py; the compiled kernel is cached in kernels/ to skip rebuilding.
 import argparse
 import hashlib
 import inspect
@@ -16,7 +16,7 @@ from odp.dynamics import DubinsCar
 from odp.computeGraphs.CustomGraphFunctions import my_abs, my_max
 from odp.spatialDerivatives.firstOrderENO.first_orderENO3D import spa_derivX, spa_derivY, spa_derivT
 
-from local_update_numpy import dilate, get_leaking_set, parse_args_with_params, printCorrectnessStatistics
+from numpy_impl.local_update_3d import dilate, get_leaking_set, parse_args_with_params, printCorrectnessStatistics
 
 
 def build_local_update_kernel(sys, grid, num_steps, threshold):
@@ -26,7 +26,7 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
                      decomposition result at step s-1 by more than threshold
             V_new = V_prev + t_step * (H + dissipation)   inside the region
             V_new = decomposition result at step s        outside the region
-        Same first order scheme as local_update_numpy.py (1st order ENO + Lax-Friedrichs + forward Euler).
+        Same first order scheme as numpy_impl/local_update_3d.py (1st order ENO + Lax-Friedrichs + forward Euler).
         The whole decomposition result stays in one HeteroCL array (shape (t, x, y, theta)), so no
         numpy <-> HeteroCL conversion is needed between time steps. The loop over x is parallelized.
     '''
@@ -48,7 +48,7 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
             return my_abs(V_prev[a, b, c] - V_decomp[step[0] - 1, a, b, c]) > threshold
 
         def mark_neighbours(in_region, i, j, k):
-            # Set in_region if any neighbour along any dimension was corrected (same as dilate in local_update_numpy.py)
+            # Set in_region if any neighbour along any dimension was corrected (same as dilate in numpy_impl/local_update_3d.py)
             idx = (i, j, k)
             for dim in range(3):
                 n = shape[dim]
@@ -158,10 +158,10 @@ def load_or_build_kernel(sys, grid, num_steps, threshold, cache_dir="kernels"):
 
 def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-6, cache_dir="kernels"):
     '''
-        Used by main. Same growing-region local update as local_update_from_file in local_update_numpy.py,
+        Used by main. Same growing-region local update as local_update_from_file in numpy_impl/local_update_3d.py,
         the update of each time step runs in a parallel HeteroCL kernel.
             decomp_file: npy file of the decomposition result, shape (x, y, theta, t), index 0 of the last axis is t = 0
-            leaking: boolean mask of the initial leaking set, see get_leaking_set in local_update_numpy.py
+            leaking: boolean mask of the initial leaking set, see get_leaking_set in numpy_impl/local_update_3d.py
             grid: odp Grid of the 3D system
             t_step: time step used to compute decomp_file
             threshold: a point counts as corrected if it differs from the decomposition by more than this
@@ -229,16 +229,16 @@ def main():
     '''
     # Step 1: parse and check the command-line inputs
     parser = argparse.ArgumentParser()
-    parser.add_argument("--params", help="JSON parameter file (see params/), its keys are the argument names below "
+    parser.add_argument("--params", help="JSON parameter file (see hcl_impl/params/), its keys are the argument names below "
                         "without '--'. Arguments given on the command line override the file.", default=None)
     parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, theta, t). "
                         "Required, on the command line or in --params.", default=None)
     parser.add_argument("--true_file", help="Optional npy file of the direct computation result, same shape as --decomp_file. "
                         "If not given, the local update runs without the comparison.", default=None)
     parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1, shape (x, y, theta), "
-                        "saved by decomposition.py.", default="results/init_1.npy")
+                        "saved by compute/decomposition_3d.py.", default="results/init_1.npy")
     parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2, shape (x, y, theta), "
-                        "saved by decomposition.py.", default="results/init_2.npy")
+                        "saved by compute/decomposition_3d.py.", default="results/init_2.npy")
     parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
                         help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
                         "'delta' = |V1 - V2| < delta.")
@@ -264,7 +264,7 @@ def main():
     for path, data in ((args.init_1, data_init_upper), (args.init_2, data_init_lower)):
         if data.shape != result_decomp.shape[:-1]:
             parser.error(f"shape mismatch: {path} {data.shape} vs {args.decomp_file} {result_decomp.shape[:-1]} (without t), "
-                         "generate them with the same decomposition.py run")
+                         "generate them with the same compute/decomposition_3d.py run")
 
     # Step 2: build the 3D grid with the grid size read from the decomposition file, theta is periodic
     num = result_decomp.shape[0]

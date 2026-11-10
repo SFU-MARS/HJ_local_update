@@ -1,4 +1,4 @@
-# Numpy dynamics and optimal control of the 3D Dubins car, used by local_update_numpy.py.
+# Numpy dynamics and optimal control of the 3D Dubins car, used by numpy_impl/local_update_3d.py.
 import numpy as np
 import math
 

@@ -1,7 +1,7 @@
 import numpy as np
 import heterocl as hcl
-from system import couple_u
-from subsystem import subsys
+from dynamics.coupled_2d import couple_u
+from subdynamics.coupled_2d import subsys
 from odp.Grid import Grid
 from odp.Shapes import *
 

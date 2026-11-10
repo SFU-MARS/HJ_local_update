@@ -5,8 +5,8 @@ import math
 from odp.Grid import Grid
 from odp.Shapes import *
 
-from system import quadrotor
-from spatial_V_numpy import spa_deriv6X1, spa_deriv6X2, spa_deriv6X3, spa_deriv6X4, spa_deriv6X5, spa_deriv6X6
+from dynamics.quadrotor_6d import quadrotor
+from common.spatial_deriv_6d import spa_deriv6X1, spa_deriv6X2, spa_deriv6X3, spa_deriv6X4, spa_deriv6X5, spa_deriv6X6
 
 # Plot Options
 from odp.Plots import *

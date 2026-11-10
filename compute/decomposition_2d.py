@@ -5,12 +5,12 @@ import numpy as np
 from odp.Grid import Grid
 from odp.Shapes import *
 
-from subsystem import subsys
-from update_V_numpy import spa_deriv
+from subdynamics.coupled_2d import subsys
+from common.spatial_deriv_2d import spa_deriv
 
 # Plot Options
 from odp.Plots import *
-from config import Config, construct1DGrid, construct2DGrid
+from compute.config_2d import Config, construct1DGrid, construct2DGrid
 import time
 
 

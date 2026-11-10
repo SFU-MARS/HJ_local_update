@@ -1,4 +1,4 @@
-# 2D subsystems of the 3D Dubins car, used by decomposition.py:
+# 2D subsystems of the 3D Dubins car, used by compute/decomposition_3d.py:
 #   subsys_1: (x, theta),  subsys_2: (y, theta)
 # Each has HeteroCL methods (for HJSolver) and numpy methods.
 import heterocl as hcl

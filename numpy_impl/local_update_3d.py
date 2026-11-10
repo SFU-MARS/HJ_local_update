@@ -10,10 +10,10 @@ import sys as py_sys
 
 from odp.Grid import Grid
 
-from system import dubins_car
+from dynamics.dubins_3d import dubins_car
 
 # The function of computing first order spatial derivative
-from update_V_numpy import spa_deriv3X1, spa_deriv3X2, spa_deriv3X3
+from common.spatial_deriv_3d import spa_deriv3X1, spa_deriv3X2, spa_deriv3X3
 
 import time
 
@@ -76,7 +76,7 @@ def get_leaking_set(data_init_upper, data_init_lower, result_decomp, grid, mode=
             mode="smallest" (default): the switching surface V1 = V2 plus its neighbours,
                 dilate(|V1 - V2| < 1e-9). Smallest set that gives the full correction, no tuning.
             mode="delta": |V1 - V2| < delta, with delta = max|initial value - final
-                decomposition result| (new_theory_L in 6d_union). Conservative, larger set.
+                decomposition result| (new_theory_L in common/leaking_6d.py). Conservative, larger set.
     '''
     if mode == "smallest":
         leaking = dilate(abs(data_init_upper - data_init_lower) < 1e-9, grid)
@@ -182,7 +182,7 @@ def printCorrectnessStatistics(result_true, result_decomp, result_local):
 
 def parse_args_with_params(parser):
     '''
-        Used by main here and in local_update_hcl.py. Parse the command line of a parser that has a --params
+        Used by main here and in hcl_impl/local_update_3d.py. Parse the command line of a parser that has a --params
         argument. The keys of the JSON file given by --params (argument names without '--') replace the
         defaults, so arguments given on the command line still override the file.
         Returns the parsed arguments.
@@ -210,16 +210,16 @@ def parse_args_with_params(parser):
 def main():
     # Step 1: parse and check the inputs (from the command line and/or the --params file)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--params", help="JSON parameter file (see params/), its keys are the argument names below "
+    parser.add_argument("--params", help="JSON parameter file (see numpy_impl/params/), its keys are the argument names below "
                         "without '--'. Arguments given on the command line override the file.", default=None)
     parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, theta, t). "
                         "Required, on the command line or in --params.", default=None)
     parser.add_argument("--true_file", help="Optional npy file of the direct computation result, same shape as --decomp_file. "
                         "If not given, the local update runs without the comparison.", default=None)
     parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1, shape (x, y, theta), "
-                        "saved by decomposition.py.", default="results/init_1.npy")
+                        "saved by compute/decomposition_3d.py.", default="results/init_1.npy")
     parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2, shape (x, y, theta), "
-                        "saved by decomposition.py.", default="results/init_2.npy")
+                        "saved by compute/decomposition_3d.py.", default="results/init_2.npy")
     parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
                         help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
                         "'delta' = |V1 - V2| < delta.")
@@ -244,7 +244,7 @@ def main():
     for path, data in ((args.init_1, data_init_upper), (args.init_2, data_init_lower)):
         if data.shape != decomp_shape[:-1]:
             parser.error(f"shape mismatch: {path} {data.shape} vs {args.decomp_file} {decomp_shape[:-1]} (without t), "
-                         "generate them with the same decomposition.py run")
+                         "generate them with the same compute/decomposition_3d.py run")
 
     # Step 2: set the dynamics, same as the direct computation, control tries to avoid the obstacle
     sys = dubins_car(v=1, wMax=1, dMax=0.0, uMode='max', dMode='min')

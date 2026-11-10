@@ -4,8 +4,8 @@ import numpy as np
 from odp.Grid import Grid
 from odp.Shapes import *
 
-from system import couple_u
-from update_V_numpy import spa_derivX, spa_derivY
+from dynamics.coupled_2d import couple_u
+from common.spatial_deriv_2d import spa_derivX, spa_derivY
 
 # Plot Options
 from odp.Plots import *
@@ -14,7 +14,7 @@ from odp.Plots import *
 from odp.solver import HJSolver
 
 import time
-from config import Config, construct2DGrid
+from compute.config_2d import Config, construct2DGrid
 
 
 def direct_computation(config: Config, saveAllTimeStep, debug=False):

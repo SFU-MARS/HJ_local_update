@@ -1,12 +1,12 @@
-from direct_numpy import direct_comp   
-from decomposition_numpy import decomposition
+from compute.direct_6d import direct_comp
+from compute.decomposition_6d import decomposition
 
 import numpy as np
 import heterocl as hcl
 import math
 # import cv2
 
-from set_2plot import *
+# from common.plotting_6d import *  (unused here, and it needs pre_plot, which the current optimized_dp no longer has)
 from odp.Plots import PlotOptions
 from odp.Plots import plot_isosurface, plot_valuefunction
 
@@ -15,12 +15,12 @@ import plotly.express as px
 from odp.Grid import Grid
 from odp.Shapes import *
 
-from system import quadrotor
+from dynamics.quadrotor_6d import quadrotor
 
 # The function of computing first order spatial derivative
-from spatial_V_numpy import spa_deriv6X1, spa_deriv6X2, spa_deriv6X3, spa_deriv6X4, spa_deriv6X5, spa_deriv6X6
+from common.spatial_deriv_6d import spa_deriv6X1, spa_deriv6X2, spa_deriv6X3, spa_deriv6X4, spa_deriv6X5, spa_deriv6X6
 
-from leaking_corner import *
+from common.leaking_6d import *
 
 import time
 

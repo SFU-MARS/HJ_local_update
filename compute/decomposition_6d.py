@@ -5,8 +5,8 @@ import math
 from odp.Grid import Grid
 from odp.Shapes import *
 
-from subsystem import subsys_1, subsys_2
-from spatial_V_numpy import spa_deriv4X1, spa_deriv4X2, spa_deriv4X3, spa_deriv4X4
+from subdynamics.quadrotor_6d import subsys_1, subsys_2
+from common.spatial_deriv_6d import spa_deriv4X1, spa_deriv4X2, spa_deriv4X3, spa_deriv4X4
 
 # Plot Options
 from odp.Plots import *

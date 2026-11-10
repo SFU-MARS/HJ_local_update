@@ -1,5 +1,5 @@
 # Decomposition of the 3D Dubins car into two 2D subsystems solved with HJSolver,
-# combined as V = min(V1, V2). Saves results/result_decomp_3d.npy, same shape as direct.py,
+# combined as V = min(V1, V2). Saves results/result_decomp_3d.npy, same shape as direct_3d.py,
 # and the subsystem initial values results/init_1.npy, results/init_2.npy, shape (x, y, theta).
 import numpy as np
 import math
@@ -11,7 +11,7 @@ from odp.solver import HJSolver
 from odp.Plots import PlotOptions
 from odp.Plots import visualize_plots
 
-from subsystem import subsys_1, subsys_2
+from subdynamics.dubins_3d import subsys_1, subsys_2
 
 import time
 import os
