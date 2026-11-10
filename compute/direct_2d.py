@@ -5,7 +5,7 @@ from odp.Grid import Grid
 from odp.Shapes import *
 
 from dynamics.coupled_2d import couple_u
-from common.spatial_deriv_2d import spa_derivX, spa_derivY
+from common.spatial_deriv import spa_deriv
 
 # Plot Options
 from odp.Plots import *
@@ -69,8 +69,8 @@ def direct_computation(config: Config, saveAllTimeStep, debug=False):
             for y in range(len(list_x2)):
 
                 # Get spatial derivative
-                dV_dx_L, dV_dx_R = spa_derivX(x, y, data, g)
-                dV_dy_L, dV_dy_R = spa_derivY(x, y, data, g)
+                dV_dx_L, dV_dx_R = spa_deriv((x, y), data, g, 0, boundary="one_sided")
+                dV_dy_L, dV_dy_R = spa_deriv((x, y), data, g, 1, boundary="one_sided")
 
                 # Get the average gradient
                 dV_dx = (dV_dx_L + dV_dx_R) / 2

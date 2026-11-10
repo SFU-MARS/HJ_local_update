@@ -16,7 +16,7 @@ from common.params import parse_args_with_params
 from common.stats import printCorrectnessStatistics
 
 # The function of computing first order spatial derivative
-from common.spatial_deriv_3d import spa_deriv3X1, spa_deriv3X2, spa_deriv3X3
+from common.spatial_deriv import spa_deriv
 
 import time
 
@@ -28,9 +28,9 @@ def recomputeValueChange(data, x, y, z, grid, sys, t, t_step):
     # recompute value change at index data[x, y, z] using the value function data
 
     # Get the left and right spatial derivatives (1st order)
-    dV_dx_L, dV_dx_R = spa_deriv3X1(x, y, z, data, grid)
-    dV_dy_L, dV_dy_R = spa_deriv3X2(x, y, z, data, grid)
-    dV_dT_L, dV_dT_R = spa_deriv3X3(x, y, z, data, grid)
+    dV_dx_L, dV_dx_R = spa_deriv((x, y, z), data, grid, 0, boundary="extrapolate")
+    dV_dy_L, dV_dy_R = spa_deriv((x, y, z), data, grid, 1, boundary="extrapolate")
+    dV_dT_L, dV_dT_R = spa_deriv((x, y, z), data, grid, 2, boundary="extrapolate")
 
     # Get the average gradient
     dV_dx = (dV_dx_L + dV_dx_R) / 2

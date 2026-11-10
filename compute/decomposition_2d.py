@@ -6,7 +6,7 @@ from odp.Grid import Grid
 from odp.Shapes import *
 
 from subdynamics.coupled_2d import subsys
-from common.spatial_deriv_2d import spa_deriv
+from common.spatial_deriv import spa_deriv
 
 # Plot Options
 from odp.Plots import *
@@ -79,7 +79,7 @@ def decomposition(config: Config, saveAllTimeStep=True, debug=False):
         # Update the value function
         for x in range(len(list_x)):
             # Get spatial derivative
-            dV_dx_L, dV_dx_R = spa_deriv(x, data_sub, g)
+            dV_dx_L, dV_dx_R = spa_deriv((x,), data_sub, g, 0, boundary="one_sided")
             # Get the average gradient
             dV_dx = (dV_dx_L + dV_dx_R) / 2
             # Get the dynamical rates of change

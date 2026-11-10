@@ -23,7 +23,7 @@ from common.combine import check_combine
 from common.stats import compareArrays
 
 # The function of computing first order spatial derivative
-from common.spatial_deriv_2d import spa_derivX, spa_derivY
+from common.spatial_deriv import spa_deriv
 
 import time
 
@@ -154,8 +154,8 @@ def correctionBasedOnDirectComputation(
             x = indice[ind][0]
             y = indice[ind][1]
             # get spatial derivative
-            dV_dx_L, dV_dx_R = spa_derivX(x, y, data, grid)
-            dV_dy_L, dV_dy_R = spa_derivY(x, y, data, grid)
+            dV_dx_L, dV_dx_R = spa_deriv((x, y), data, grid, 0, boundary="one_sided")
+            dV_dy_L, dV_dy_R = spa_deriv((x, y), data, grid, 1, boundary="one_sided")
             # Get the average gradient
             dV_dx = (dV_dx_L + dV_dx_R) / 2
             dV_dy = (dV_dy_L + dV_dy_R) / 2
@@ -343,8 +343,8 @@ class CorrectionBasedOnLocalUpdate:
         # Note: t is not being used in both opt_ctrl_numpy() and dynamics_numpy().
 
         # Get spatial derivative
-        dV_dx_L, dV_dx_R = spa_derivX(x, y, data, self._grid)
-        dV_dy_L, dV_dy_R = spa_derivY(x, y, data, self._grid)
+        dV_dx_L, dV_dx_R = spa_deriv((x, y), data, self._grid, 0, boundary="one_sided")
+        dV_dy_L, dV_dy_R = spa_deriv((x, y), data, self._grid, 1, boundary="one_sided")
 
         # Get the average gradient
         dV_dx = (dV_dx_L + dV_dx_R) / 2

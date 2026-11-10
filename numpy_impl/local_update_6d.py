@@ -21,7 +21,7 @@ from odp.Shapes import *
 from dynamics.quadrotor_6d import quadrotor
 
 # The function of computing first order spatial derivative
-from common.spatial_deriv_6d import spa_deriv6X1, spa_deriv6X2, spa_deriv6X3, spa_deriv6X4, spa_deriv6X5, spa_deriv6X6
+from common.spatial_deriv import spa_deriv
 
 from common.leaking import ground_truth_L, new_theory_L, ground_truth_delta
 from common.combine import check_combine
@@ -144,12 +144,12 @@ def main():
             x5 = indice[ind][5]
 
             # get spatial derivative
-            dV_d0_L, dV_d0_R = spa_deriv6X1(x0,x1,x2,x3,x4,x5,data,grid)
-            dV_d1_L, dV_d1_R = spa_deriv6X2(x0,x1,x2,x3,x4,x5,data,grid)
-            dV_d2_L, dV_d2_R = spa_deriv6X3(x0,x1,x2,x3,x4,x5,data,grid)
-            dV_d3_L, dV_d3_R = spa_deriv6X4(x0,x1,x2,x3,x4,x5,data,grid)
-            dV_d4_L, dV_d4_R = spa_deriv6X5(x0,x1,x2,x3,x4,x5,data,grid)
-            dV_d5_L, dV_d5_R = spa_deriv6X6(x0,x1,x2,x3,x4,x5,data,grid)
+            dV_d0_L, dV_d0_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 0, boundary="one_sided")
+            dV_d1_L, dV_d1_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 1, boundary="one_sided")
+            dV_d2_L, dV_d2_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 2, boundary="one_sided")
+            dV_d3_L, dV_d3_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 3, boundary="one_sided")
+            dV_d4_L, dV_d4_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 4, boundary="one_sided")
+            dV_d5_L, dV_d5_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 5, boundary="one_sided")
 
 
             # Get the average gradient

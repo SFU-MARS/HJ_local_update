@@ -6,7 +6,7 @@ from odp.Grid import Grid
 from odp.Shapes import *
 
 from subdynamics.quadrotor_6d import subsys_1, subsys_2
-from common.spatial_deriv_6d import spa_deriv4X1, spa_deriv4X2, spa_deriv4X3, spa_deriv4X4
+from common.spatial_deriv import spa_deriv
 
 # Plot Options
 from odp.Plots import *
@@ -84,10 +84,10 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="unio
                 for x2 in range(len(list_x2)):
                     for x3 in range(len(list_x3)):
                         # Get spatial derivative
-                        dV_d0_L, dV_d0_R = spa_deriv4X1(x0, x1, x2, x3, data_sub_1, g)
-                        dV_d1_L, dV_d1_R = spa_deriv4X2(x0, x1, x2, x3, data_sub_1, g)
-                        dV_d2_L, dV_d2_R = spa_deriv4X3(x0, x1, x2, x3, data_sub_1, g)
-                        dV_d3_L, dV_d3_R = spa_deriv4X4(x0, x1, x2, x3, data_sub_1, g)
+                        dV_d0_L, dV_d0_R = spa_deriv((x0, x1, x2, x3), data_sub_1, g, 0, boundary="one_sided")
+                        dV_d1_L, dV_d1_R = spa_deriv((x0, x1, x2, x3), data_sub_1, g, 1, boundary="one_sided")
+                        dV_d2_L, dV_d2_R = spa_deriv((x0, x1, x2, x3), data_sub_1, g, 2, boundary="one_sided")
+                        dV_d3_L, dV_d3_R = spa_deriv((x0, x1, x2, x3), data_sub_1, g, 3, boundary="one_sided")
                         
                         # Get the average gradient
                         dV_d0 = (dV_d0_L + dV_d0_R)/2
@@ -131,10 +131,10 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="unio
                     for x3 in range(len(list_x3)):
                         
                         # Get spatial derivative
-                        dV_d0_L, dV_d0_R = spa_deriv4X1(x0, x1, x2, x3, data_sub_2, g)
-                        dV_d1_L, dV_d1_R = spa_deriv4X2(x0, x1, x2, x3, data_sub_2, g)
-                        dV_d2_L, dV_d2_R = spa_deriv4X3(x0, x1, x2, x3, data_sub_2, g)
-                        dV_d3_L, dV_d3_R = spa_deriv4X4(x0, x1, x2, x3, data_sub_2, g)
+                        dV_d0_L, dV_d0_R = spa_deriv((x0, x1, x2, x3), data_sub_2, g, 0, boundary="one_sided")
+                        dV_d1_L, dV_d1_R = spa_deriv((x0, x1, x2, x3), data_sub_2, g, 1, boundary="one_sided")
+                        dV_d2_L, dV_d2_R = spa_deriv((x0, x1, x2, x3), data_sub_2, g, 2, boundary="one_sided")
+                        dV_d3_L, dV_d3_R = spa_deriv((x0, x1, x2, x3), data_sub_2, g, 3, boundary="one_sided")
                         
                         # Get the average gradient
                         dV_d0 = (dV_d0_L + dV_d0_R)/2
