@@ -34,14 +34,17 @@ python local_update_numpy.py --decomp_file results/result_decomp_3d.npy --true_f
 or the parallel HeteroCL version:
 
 ```bash
-python local_update_hcl.py --decomp_file results/result_decomp_3d.npy --true_file results/result_direct_3d.npy --init_1 results/init_1.npy --init_2 results/init_2.npy --t_step 0.04
+python local_update_hcl.py --params params/local_update_hcl.json
 ```
+
+The parameter file [params/local_update_hcl.json](params/local_update_hcl.json) holds the arguments in the table below (keys without `--`). Arguments given on the command line override the file, e.g. `--params params/local_update_hcl.json --t_step 0.02`. All arguments can also be given on the command line without `--params`.
 
 The results are saved to `results/result_local_3d.npy` (numpy) and `results/result_local_hcl_3d.npy` (HeteroCL). The HeteroCL version saves the compiled kernel in `kernels/` on the first run and loads it on later runs.
 
 | Argument | Required | Default | Description |
 |---|---|---|---|
-| `--decomp_file` | yes | — | Decomposition result |
+| `--params` | no | none | HeteroCL version only: JSON parameter file holding the arguments below |
+| `--decomp_file` | yes | — | Decomposition result (on the command line or in `--params`) |
 | `--true_file` | no | none | Direct computation result. If not given, the local update runs and saves its result without the comparison |
 | `--init_1`, `--init_2` | no | `results/init_1.npy`, `results/init_2.npy` | Subsystem initial values, used for the leaking set |
 | `--leaking_mode` | no | `smallest` | Initial leaking set, `smallest` or `delta`, see below |

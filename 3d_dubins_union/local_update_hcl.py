@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import inspect
+import json
 import math
 import os
 import time
@@ -229,7 +230,10 @@ def main():
     '''
     # Step 1: parse and check the command-line inputs
     parser = argparse.ArgumentParser()
-    parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, theta, t).", required=True)
+    parser.add_argument("--params", help="JSON parameter file (see params/), its keys are the argument names below "
+                        "without '--'. Arguments given on the command line override the file.", default=None)
+    parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, theta, t). "
+                        "Required, on the command line or in --params.", default=None)
     parser.add_argument("--true_file", help="Optional npy file of the direct computation result, same shape as --decomp_file. "
                         "If not given, the local update runs without the comparison.", default=None)
     parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1, shape (x, y, theta), "
@@ -242,7 +246,24 @@ def main():
     parser.add_argument("--t_step", help="Time step used to compute both files.", default=0.04, type=float)
     parser.add_argument("--cache_dir", help="Directory of the compiled HeteroCL kernels. A kernel built before with the "
                         "same settings is loaded from here instead of being rebuilt.", default="kernels")
+    # Values from --params replace the defaults, so command-line arguments still override them
+    params_path = parser.parse_known_args()[0].params
+    if params_path is not None:
+        if not os.path.isfile(params_path):
+            parser.error(f"file not found: {params_path}")
+        with open(params_path) as f:
+            params = json.load(f)
+        known = {action.dest for action in parser._actions}
+        unknown = sorted(set(params) - known)
+        if unknown:
+            parser.error(f"unknown keys in {params_path}: {unknown}")
+        parser.set_defaults(**params)
     args = parser.parse_args()
+    if args.decomp_file is None:
+        parser.error("--decomp_file is required (on the command line or in --params)")
+    if args.leaking_mode not in ("smallest", "delta"):
+        parser.error(f"leaking_mode must be 'smallest' or 'delta', got {args.leaking_mode!r}")
+    args.t_step = float(args.t_step)
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
         if path is not None and not os.path.isfile(path):
             parser.error(f"file not found: {path}")
