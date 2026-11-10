@@ -17,7 +17,7 @@ The dimension of each case is in the file name: `_2d`, `_3d`, `_6d`.
       params/          parameter files of the numpy local updates
     hcl_impl/          local update, HeteroCL: local_update_2d.py, local_update_3d.py
       params/          parameter files of the HeteroCL local updates
-    common/            code shared by the cases (spatial derivative, leaking set, statistics, parameter files, plots)
+    common/            code shared by the cases (spatial derivative in numpy and HeteroCL, leaking set, statistics, parameter files, plots)
     results/           saved results, created when you run (not in git)
     kernels/           compiled HeteroCL kernels, created when you run (not in git)
 
@@ -211,8 +211,8 @@ It saves `results/result_decomp_6d_union.npy` and `results/result_local_6d_union
     hcl_impl/local_update_2d.py
     ├── compute/direct_2d.py, compute/decomposition_2d.py, compute/config_2d.py
     ├── dynamics/coupled_2d.py (opt_ctrl, dynamics in HeteroCL)
-    ├── hcl_impl/spatial_deriv.py, hcl_impl/kernel_cache.py
-    └── common/            (stats, params, combine)
+    ├── hcl_impl/kernel_cache.py
+    └── common/            (spatial_deriv, stats, params, combine)
 
     numpy_impl/local_update_3d.py
     ├── dynamics/dubins_3d.py

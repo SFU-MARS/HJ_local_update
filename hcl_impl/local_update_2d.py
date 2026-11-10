@@ -19,8 +19,8 @@ from common.combine import check_combine
 from common.params import parse_args_with_params
 from common.stats import printCorrectnessStatistics2d
 from hcl_impl.kernel_cache import load_or_build_kernel
-from hcl_impl import spatial_deriv
-from hcl_impl.spatial_deriv import spa_deriv_one_sided
+from common import spatial_deriv
+from common.spatial_deriv import spa_deriv_hcl
 
 DTYPE = hcl.Float(64)
 
@@ -85,8 +85,8 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
                 with hcl.for_(0, nx, name="i") as i:
                     with hcl.for_(0, ny, name="j") as j:
                         with hcl.if_(hcl.and_(in_region[i, j] == 1, done[i, j] == 0)):
-                            dV_dx_L, dV_dx_R = spa_deriv_one_sided(V_prev, [i, j], 0, grid)
-                            dV_dy_L, dV_dy_R = spa_deriv_one_sided(V_prev, [i, j], 1, grid)
+                            dV_dx_L, dV_dx_R = spa_deriv_hcl([i, j], V_prev, grid, 0, boundary="one_sided")
+                            dV_dy_L, dV_dy_R = spa_deriv_hcl([i, j], V_prev, grid, 1, boundary="one_sided")
                             dV_dx = hcl.scalar(0, "dV_dx")
                             dV_dy = hcl.scalar(0, "dV_dy")
                             dV_dx[0] = (dV_dx_L + dV_dx_R) / 2
