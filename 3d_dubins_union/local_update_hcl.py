@@ -3,7 +3,6 @@
 import argparse
 import hashlib
 import inspect
-import json
 import math
 import os
 import time
@@ -17,7 +16,7 @@ from odp.dynamics import DubinsCar
 from odp.computeGraphs.CustomGraphFunctions import my_abs, my_max
 from odp.spatialDerivatives.firstOrderENO.first_orderENO3D import spa_derivX, spa_derivY, spa_derivT
 
-from local_update_numpy import dilate, get_leaking_set, printCorrectnessStatistics
+from local_update_numpy import dilate, get_leaking_set, parse_args_with_params, printCorrectnessStatistics
 
 
 def build_local_update_kernel(sys, grid, num_steps, threshold):
@@ -247,23 +246,9 @@ def main():
     parser.add_argument("--cache_dir", help="Directory of the compiled HeteroCL kernels. A kernel built before with the "
                         "same settings is loaded from here instead of being rebuilt.", default="kernels")
     # Values from --params replace the defaults, so command-line arguments still override them
-    params_path = parser.parse_known_args()[0].params
-    if params_path is not None:
-        if not os.path.isfile(params_path):
-            parser.error(f"file not found: {params_path}")
-        with open(params_path) as f:
-            params = json.load(f)
-        known = {action.dest for action in parser._actions}
-        unknown = sorted(set(params) - known)
-        if unknown:
-            parser.error(f"unknown keys in {params_path}: {unknown}")
-        parser.set_defaults(**params)
-    args = parser.parse_args()
+    args = parse_args_with_params(parser)
     if args.decomp_file is None:
         parser.error("--decomp_file is required (on the command line or in --params)")
-    if args.leaking_mode not in ("smallest", "delta"):
-        parser.error(f"leaking_mode must be 'smallest' or 'delta', got {args.leaking_mode!r}")
-    args.t_step = float(args.t_step)
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
         if path is not None and not os.path.isfile(path):
             parser.error(f"file not found: {path}")

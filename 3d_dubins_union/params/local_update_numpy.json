@@ -1,0 +1,8 @@
+{
+    "decomp_file": "results/result_decomp_3d.npy",
+    "true_file": "results/result_direct_3d.npy",
+    "init_1": "results/init_1.npy",
+    "init_2": "results/init_2.npy",
+    "leaking_mode": "smallest",
+    "t_step": 0.04
+}

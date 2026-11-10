@@ -25,10 +25,10 @@ This saves to `results/`:
 - `result_decomp_3d.npy`: decomposition V = min(V1, V2), shape (x, y, θ, t)
 - `init_1.npy`, `init_2.npy`: subsystem initial values V1(x, θ) and V2(y, θ) on the 3D grid, shape (x, y, θ)
 
-Then run the local update, numpy version:
+Then run the local update with a parameter file, numpy version:
 
 ```bash
-python local_update_numpy.py --decomp_file results/result_decomp_3d.npy --true_file results/result_direct_3d.npy --init_1 results/init_1.npy --init_2 results/init_2.npy --t_step 0.04
+python local_update_numpy.py --params params/local_update_numpy.json
 ```
 
 or the parallel HeteroCL version:
@@ -37,14 +37,40 @@ or the parallel HeteroCL version:
 python local_update_hcl.py --params params/local_update_hcl.json
 ```
 
-The parameter file [params/local_update_hcl.json](params/local_update_hcl.json) holds the arguments in the table below (keys without `--`). Arguments given on the command line override the file, e.g. `--params params/local_update_hcl.json --t_step 0.02`. All arguments can also be given on the command line without `--params`.
-
 The results are saved to `results/result_local_3d.npy` (numpy) and `results/result_local_hcl_3d.npy` (HeteroCL). The HeteroCL version saves the compiled kernel in `kernels/` on the first run and loads it on later runs.
+
+#### Parameter Files
+
+The `params/` folder holds one JSON parameter file per script:
+
+- [params/local_update_numpy.json](params/local_update_numpy.json)
+- [params/local_update_hcl.json](params/local_update_hcl.json)
+
+Each key is an argument from the table below without `--`, for example:
+
+```json
+{
+    "decomp_file": "results/result_decomp_3d.npy",
+    "true_file": "results/result_direct_3d.npy",
+    "init_1": "results/init_1.npy",
+    "init_2": "results/init_2.npy",
+    "leaking_mode": "smallest",
+    "t_step": 0.04
+}
+```
+
+Keys left out of the file take their default value, and `"true_file": null` skips the comparison. An unknown key or an invalid `leaking_mode` stops the script with an error. To try another setting, copy a file in `params/` and edit it. Arguments given on the command line override the file:
+
+```bash
+python local_update_hcl.py --params params/local_update_hcl.json --leaking_mode delta
+```
+
+All arguments can also be given on the command line alone, without `--params`.
 
 | Argument | Required | Default | Description |
 |---|---|---|---|
-| `--params` | no | none | HeteroCL version only: JSON parameter file holding the arguments below |
-| `--decomp_file` | yes | — | Decomposition result (on the command line or in `--params`) |
+| `--params` | no | none | JSON parameter file holding the arguments below |
+| `--decomp_file` | yes | — | Decomposition result (in the parameter file or on the command line) |
 | `--true_file` | no | none | Direct computation result. If not given, the local update runs and saves its result without the comparison |
 | `--init_1`, `--init_2` | no | `results/init_1.npy`, `results/init_2.npy` | Subsystem initial values, used for the leaking set |
 | `--leaking_mode` | no | `smallest` | Initial leaking set, `smallest` or `delta`, see below |
@@ -92,9 +118,11 @@ True leaking corners are the points where the decomposition error starts. At som
     └── system.py
 
     local_update_hcl.py
-    ├── local_update_numpy.py  (dilate, get_leaking_set, printCorrectnessStatistics)
+    ├── local_update_numpy.py  (dilate, get_leaking_set, parse_args_with_params, printCorrectnessStatistics)
     └── odp                    (DubinsCar, 1st order ENO derivatives)
 
     direct.py                  (odp HJSolver, DubinsCar)
     decomposition.py           (odp HJSolver)
     └── subsystem.py
+
+    params/                    (JSON parameter files of the local update scripts)

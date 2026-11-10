@@ -1,6 +1,7 @@
 # Local update of the 3D Dubins car decomposition result, pure numpy version.
 # Corrects the decomposition result near the leaking corners so it matches the direct computation.
 import argparse
+import json
 
 import numpy as np
 import math
@@ -179,10 +180,40 @@ def printCorrectnessStatistics(result_true, result_decomp, result_local):
     compareArrays(true_final, local_final)
 
 
+def parse_args_with_params(parser):
+    '''
+        Used by main here and in local_update_hcl.py. Parse the command line of a parser that has a --params
+        argument. The keys of the JSON file given by --params (argument names without '--') replace the
+        defaults, so arguments given on the command line still override the file.
+        Returns the parsed arguments.
+    '''
+    params_path = parser.parse_known_args()[0].params
+    if params_path is not None:
+        if not os.path.isfile(params_path):
+            parser.error(f"file not found: {params_path}")
+        with open(params_path) as f:
+            params = json.load(f)
+        actions = {action.dest: action for action in parser._actions}
+        unknown = sorted(set(params) - set(actions) - {"params"})
+        if unknown:
+            parser.error(f"unknown keys in {params_path}: {unknown}")
+        for key, value in params.items():
+            action = actions[key]
+            if value is not None and action.type is not None:
+                params[key] = action.type(value)
+            if action.choices is not None and params[key] not in action.choices:
+                parser.error(f"{key} in {params_path} must be one of {list(action.choices)}, got {value!r}")
+        parser.set_defaults(**params)
+    return parser.parse_args()
+
+
 def main():
-    # Step 1: parse and check the command-line inputs
+    # Step 1: parse and check the inputs (from the command line and/or the --params file)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, theta, t).", default=None)
+    parser.add_argument("--params", help="JSON parameter file (see params/), its keys are the argument names below "
+                        "without '--'. Arguments given on the command line override the file.", default=None)
+    parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, theta, t). "
+                        "Required, on the command line or in --params.", default=None)
     parser.add_argument("--true_file", help="Optional npy file of the direct computation result, same shape as --decomp_file. "
                         "If not given, the local update runs without the comparison.", default=None)
     parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1, shape (x, y, theta), "
@@ -195,10 +226,10 @@ def main():
     parser.add_argument("--t_step", help="Time step used to compute both files. Keep it below the CFL bound of HJSolver "
                         "(about 0.048 for a 41^3 grid) so that HJSolver takes exactly one Euler step per time step.",
                         default=0.04, type=float)
-    args = parser.parse_args()
+    args = parse_args_with_params(parser)
 
     if args.decomp_file is None:
-        parser.error("need file input --decomp_file (e.g. --decomp_file results/result_decomp_3d.npy)")
+        parser.error("--decomp_file is required (on the command line or in --params)")
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
         if path is not None and not os.path.isfile(path):
             parser.error(f"file not found: {path}")
