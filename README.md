@@ -33,7 +33,7 @@ Run every command from the repository root. Scripts run as modules, e.g. `python
 | Case | Union | Intersection | Default |
 |---|---|---|---|
 | 2d | ✓ | ✓ | `intersection` |
-| 3d | ✓ | not implemented, stops with an error | `union` |
+| 3d | ✓ | ✓ | `union` |
 | 6d | ✓ | not implemented, stops with an error | `union` |
 
 Saved result files carry the dimension and the setting, e.g. `results/result_decomp_3d_union.npy`.
@@ -65,9 +65,14 @@ To add a system, write its class (with the methods listed at the top of [dynamic
 
 ## 3D Dubins Car
 
+The set is built from the two rectangles x_min ≤ x ≤ x_max and y_min ≤ y ≤ y_max (θ unbounded, default ±0.5), with V1(x, θ) and V2(y, θ) from the two subsystems:
+
+- `union`: obstacle = union of the rectangles (a cross), V = min(V1, V2), the control avoids it (uMode `max`)
+- `intersection`: target = intersection of the rectangles (a square), V = max(V1, V2), the control reaches it (uMode `min`)
+
 ### Running Local Update
 
-First generate the direct and decomposition results (both default to `accuracy='low'` and `t_step=0.04` to match the local update scheme):
+First generate the direct and decomposition results (both default to `accuracy='low'` and `t_step=0.04` to match the local update scheme). Union:
 
 ```bash
 python -c "
@@ -78,32 +83,34 @@ decomposition(41, plot=False, combine='union')
 "
 ```
 
-This saves to `results/`:
+For intersection, run the same with `combine='intersection'`. This saves to `results/`:
 
-- `result_direct_3d_union.npy`: direct computation (ground truth), shape (x, y, θ, t)
-- `result_decomp_3d_union.npy`: decomposition V = min(V1, V2), shape (x, y, θ, t)
-- `init_1_3d.npy`, `init_2_3d.npy`: subsystem initial values V1(x, θ) and V2(y, θ) on the 3D grid, shape (x, y, θ)
+- `result_direct_3d_<combine>.npy`: direct computation (ground truth), shape (x, y, θ, t)
+- `result_decomp_3d_<combine>.npy`: decomposition V = min(V1, V2) (union) or max(V1, V2) (intersection), shape (x, y, θ, t)
+- `init_1_3d.npy`, `init_2_3d.npy`: subsystem initial values V1(x, θ) and V2(y, θ) on the 3D grid, shape (x, y, θ), the same for both settings
 
 Then run the local update with a parameter file, numpy version:
 
 ```bash
 python -m numpy_impl.local_update_3d --params numpy_impl/params/local_update_3d.json
+python -m numpy_impl.local_update_3d --params numpy_impl/params/local_update_3d_intersection.json
 ```
 
 or the parallel HeteroCL version:
 
 ```bash
 python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d.json
+python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d_intersection.json
 ```
 
-The results are saved to `results/result_local_3d_union.npy` (numpy) and `results/result_local_hcl_3d_union.npy` (HeteroCL). The HeteroCL version saves the compiled kernel in `kernels/` on the first run and loads it on later runs.
+The results are saved to `results/result_local_3d_<combine>.npy` (numpy) and `results/result_local_hcl_3d_<combine>.npy` (HeteroCL). The HeteroCL version saves the compiled kernel in `kernels/` on the first run and loads it on later runs.
 
 #### Parameter Files
 
-Each implementation keeps its parameter files next to its scripts:
+Each implementation keeps its parameter files next to its scripts, one per setting:
 
-- [numpy_impl/params/local_update_3d.json](numpy_impl/params/local_update_3d.json)
-- [hcl_impl/params/local_update_3d.json](hcl_impl/params/local_update_3d.json)
+- [numpy_impl/params/local_update_3d.json](numpy_impl/params/local_update_3d.json), [numpy_impl/params/local_update_3d_intersection.json](numpy_impl/params/local_update_3d_intersection.json)
+- [hcl_impl/params/local_update_3d.json](hcl_impl/params/local_update_3d.json), [hcl_impl/params/local_update_3d_intersection.json](hcl_impl/params/local_update_3d_intersection.json)
 
 Each key is an argument from the table below without `--`, for example:
 
@@ -133,7 +140,7 @@ All arguments can also be given on the command line alone, without `--params`.
 | `--decomp_file` | yes | — | Decomposition result (in the parameter file or on the command line) |
 | `--true_file` | no | none | Direct computation result. If not given, the local update runs and saves its result without the comparison |
 | `--init_1`, `--init_2` | no | `results/init_1_3d.npy`, `results/init_2_3d.npy` | Subsystem initial values, used for the leaking set |
-| `--combine` | no | `union` | `union` or `intersection`, only `union` is implemented for 3d |
+| `--combine` | no | `union` | `union` or `intersection`, the same as for the files |
 | `--dynamics` | no | `dubins_3d` | Dynamics, see [Dynamics](#dynamics) |
 | `--dynamics_params` | no | `{}` | Parameters of the dynamics, e.g. `{"v": 1, "wMax": 1}` |
 | `--leaking_mode` | no | `smallest` | Initial leaking set, `smallest` or `delta`, see below |
@@ -147,7 +154,7 @@ At each time step, the local update recomputes the leaking set plus the points c
 - `--leaking_mode smallest` (default): the switching surface V1 = V2 plus its neighbours. The smallest leaking set that still gives the full correction, and it needs no δ. Check it with `--true_file` before trusting it on a new problem.
 - `--leaking_mode delta`: |V1 − V2| < δ, with δ = max|V(t=0) − V(t=T)| of the decomposition. Conservative, about 3 times more leaking points.
 
-Leaking corners on the 41³ grid (HeteroCL, δ = 0.997):
+Leaking corners on the 41³ grid, union (HeteroCL, δ = 0.997):
 
 | Leaking set | Leaking points | True leaking corners covered | Points with error > 1e-5 after local update |
 |---|---|---|---|
@@ -161,18 +168,18 @@ True leaking corners are the points where the decomposition error starts. At som
 
 41 x 41 x 41 grid, 25 time steps (`t_step=0.04`, `accuracy='low'`), default `--leaking_mode smallest`, measured on a machine with 32 logical CPUs (times vary by machine).
 
-| Method | Time-stepping loop (s) | Total (s) | Points with error > 1e-5 |
-|---|---|---|---|
-| Direct computation (`compute/direct_3d.py`, HJSolver) | 0.046 | 0.177 | — |
-| Local update, HeteroCL (`hcl_impl/local_update_3d.py`), first run | 0.039 | 0.208 | 0 |
-| Local update, HeteroCL (`hcl_impl/local_update_3d.py`), cached kernel | 0.008 | 0.025 | 0 |
-| Local update, numpy (`numpy_impl/local_update_3d.py`) | 10.6 | 10.6 | 4 |
+| Method | Union: loop (s) | Union: total (s) | Union: points with error > 1e-5 | Intersection: loop (s) | Intersection: total (s) | Intersection: points with error > 1e-5 |
+|---|---|---|---|---|---|---|
+| Direct computation (`compute/direct_3d.py`, HJSolver) | 0.046 | 0.177 | — | — | 0.176 | — |
+| Local update, HeteroCL (`hcl_impl/local_update_3d.py`), first run | 0.039 | 0.208 | 0 | 0.043 | 0.206 | 0 |
+| Local update, HeteroCL (`hcl_impl/local_update_3d.py`), cached kernel | 0.008 | 0.025 | 0 | 0.008 | 0.026 | 0 |
+| Local update, numpy (`numpy_impl/local_update_3d.py`) | 10.6 | 10.6 | 4 | 10.3 | 10.3 | 0 |
 
 - Time-stepping loop: HJSolver "Total kernel time" for direct computation, "Total correction time" for the local update.
 - Total: the full HJSolver call for direct computation (kernel build + setup + loop); kernel build/load + input copy + loop for the HeteroCL local update; the loop only for the numpy local update (no build or copy step).
 - The decomposition result is read from file, so its computation time is not included.
-- Error is measured against the direct computation at the final time step (the decomposition alone has 51323 points with error > 1e-5).
-- With `--leaking_mode delta` the error is the same and the time is about 10% higher (numpy 11.4 s), since most updated points come from the growing region rather than the leaking set.
+- Error is measured against the direct computation at the final time step (the decomposition alone has 51323 points with error > 1e-5 for union, 51180 for intersection).
+- With `--leaking_mode delta` the error is the same and the time is about 10% higher (numpy 11.4 s for both settings), since most updated points come from the growing region rather than the leaking set.
 
 ## 2D Coupled Control
 

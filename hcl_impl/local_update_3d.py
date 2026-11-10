@@ -231,8 +231,8 @@ def main():
     parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2, shape (x, y, theta), "
                         "saved by compute/decomposition_3d.py.", default="results/init_2_3d.npy")
     parser.add_argument("--combine", choices=["union", "intersection"], default="union",
-                        help="How the subsystems are combined: 'union' = min(V1, V2), 'intersection' = max(V1, V2). "
-                        "Only union is implemented for 3d.")
+                        help="How the subsystems are combined: 'union' = min(V1, V2), avoid (uMode max), "
+                        "'intersection' = max(V1, V2), reach (uMode min). Use the same as for the files.")
     parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
                         help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
                         "'delta' = |V1 - V2| < delta.")
@@ -244,10 +244,7 @@ def main():
     args = parse_args_with_params(parser)
     if args.decomp_file is None:
         parser.error("--decomp_file is required (on the command line or in --params)")
-    try:
-        check_combine(args.combine, ("union",), "3d")
-    except NotImplementedError as e:
-        parser.error(str(e))
+    check_combine(args.combine, ("union", "intersection"), "3d")
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
         if path is not None and not os.path.isfile(path):
             parser.error(f"file not found: {path}")

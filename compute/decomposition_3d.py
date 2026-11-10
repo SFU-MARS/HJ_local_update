@@ -1,5 +1,6 @@
 # Decomposition of the 3D Dubins car into two 2D subsystems solved with HJSolver,
-# combined as V = min(V1, V2). Saves results/result_decomp_3d_union.npy, same shape as direct_3d.py,
+# combined as V = min(V1, V2) (union) or max(V1, V2) (intersection).
+# Saves results/result_decomp_3d_<combine>.npy, same shape as direct_3d.py,
 # and the subsystem initial values results/init_1_3d.npy, results/init_2_3d.npy, shape (x, y, theta).
 import numpy as np
 import math
@@ -17,6 +18,7 @@ import time
 import os
 
 from common.combine import check_combine
+from dynamics import U_MODE
 
 
 def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
@@ -28,20 +30,23 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
         into
             subsystem 1: (x, theta)
             subsystem 2: (y, theta)
-        Each subsystem is solved with the optimized_dp HJSolver (uMode='max', avoiding the
-        obstacle), and the 3D value function is reconstructed as V(x, y, theta) =
-        min(V1(x, theta), V2(y, theta)), i.e. the obstacle is the union of the rectangles
-        x_min <= x <= x_max and y_min <= y <= y_max (theta unbounded).
-            combine: "union" (only union is implemented for 3d)
-        Saves results/result_decomp_3d_<combine>.npy and results/init_1_3d.npy, results/init_2_3d.npy.
+        Each subsystem is solved with the optimized_dp HJSolver, and the 3D value function is
+        reconstructed from V1(x, theta) and V2(y, theta), with the rectangles x_min <= x <= x_max and
+        y_min <= y <= y_max (theta unbounded):
+            combine="union": V = min(V1, V2), the obstacle is the union of the rectangles, control
+                avoids it (uMode='max')
+            combine="intersection": V = max(V1, V2), the target is the intersection of the rectangles
+                (a square), control reaches it (uMode='min')
+        Saves results/result_decomp_3d_<combine>.npy and results/init_1_3d.npy, results/init_2_3d.npy
+        (the initial values do not depend on combine).
     '''
-    check_combine(combine, ("union",), "3d")
+    check_combine(combine, ("union", "intersection"), "3d")
 
     # Create 2D grids for the subsystems, theta is periodic
     g_1 = Grid(np.array([-4.0, -math.pi]), np.array([4.0, math.pi]), 2, np.array([num, num]), [1])
     g_2 = Grid(np.array([-4.0, -math.pi]), np.array([4.0, math.pi]), 2, np.array([num, num]), [1])
 
-    # Initialize value function (negative inside the obstacle)
+    # Initialize value function (negative inside the set)
     data_sub_1 = ShapeRectangle(g_1, np.array([obstacle_min[0], -np.inf]), np.array([obstacle_max[0], np.inf]))
     data_sub_2 = ShapeRectangle(g_2, np.array([obstacle_min[1], -np.inf]), np.array([obstacle_max[1], np.inf]))
 
@@ -55,9 +60,9 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-    # Set system dynamics, control tries to avoid the obstacle
-    sys_1 = subsys_1(v=1, wMax=1, dMax=0.0, uMode='max', dMode='min')
-    sys_2 = subsys_2(v=1, wMax=1, dMax=0.0, uMode='max', dMode='min')
+    # Set system dynamics: union avoids the obstacle (uMode max), intersection reaches the target (uMode min)
+    sys_1 = subsys_1(v=1, wMax=1, dMax=0.0, uMode=U_MODE[combine], dMode='min')
+    sys_2 = subsys_2(v=1, wMax=1, dMax=0.0, uMode=U_MODE[combine], dMode='min')
 
     # Backward reachable tube of the obstacle
     compMethods = {"TargetSetMode": "None"}
@@ -98,7 +103,7 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
         result_upper = data_list_1[:, np.newaxis, :, :]
         result_lower = data_list_2[np.newaxis, :, :, :]
 
-    result_full = np.minimum(result_upper, result_lower)
+    result_full = np.minimum(result_upper, result_lower) if combine == "union" else np.maximum(result_upper, result_lower)
     result_upper = np.broadcast_to(result_upper, result_full.shape)
     result_lower = np.broadcast_to(result_lower, result_full.shape)
 
@@ -113,7 +118,7 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     if plot:
         os.makedirs('plots', exist_ok=True)
         po = PlotOptions(do_plot=False, plot_type="set", plotDims=[0,1,2], slicesCut=[],colorscale="Bluered",
-                        save_fig=True, filename="plots/decomposition_result", interactive_html=True)
+                        save_fig=True, filename=f"plots/decomposition_result_3d_{combine}", interactive_html=True)
         visualize_plots(result_full, g, po)
 
     return result_full, result_upper, result_lower, g

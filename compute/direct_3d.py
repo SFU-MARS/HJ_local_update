@@ -1,5 +1,5 @@
 # Direct computation of the full 3D Dubins car with HJSolver, used as the ground truth.
-# Saves results/result_direct_3d_union.npy, shape (x, y, theta, t), index 0 of the last axis is t = 0.
+# Saves results/result_direct_3d_<combine>.npy, shape (x, y, theta, t), index 0 of the last axis is t = 0.
 import numpy as np
 import math
 
@@ -15,6 +15,7 @@ import time
 import os
 
 from common.combine import check_combine
+from dynamics import U_MODE
 
 
 def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
@@ -23,13 +24,14 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     r'''
         Directly solve the 3D Dubins car
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{theta} = w
-        with the optimized_dp HJSolver (uMode='max', avoiding the obstacle). The obstacle is
-        the same as in decomposition_3d.py: the union of the rectangles
-        x_min <= x <= x_max and y_min <= y <= y_max (theta unbounded).
-            combine: "union" (only union is implemented for 3d)
+        with the optimized_dp HJSolver. The set is the same as in decomposition_3d.py, built from the
+        rectangles x_min <= x <= x_max and y_min <= y <= y_max (theta unbounded):
+            combine="union": obstacle = union of the rectangles, V = min(V1, V2), control avoids it (uMode='max')
+            combine="intersection": target = intersection of the rectangles (a square), V = max(V1, V2),
+                control reaches it (uMode='min')
         Saves results/result_direct_3d_<combine>.npy.
     '''
-    check_combine(combine, ("union",), "3d")
+    check_combine(combine, ("union", "intersection"), "3d")
 
     # Create 3D grid, theta is periodic
     grid_min = np.array([-4.0, -4.0, -math.pi])
@@ -38,17 +40,17 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     N = np.array([num, num, num])
     g = Grid(grid_min, grid_max, dims, N, periodicDims=[2])
 
-    # Initialize value function (negative inside the obstacle)
+    # Initialize value function (negative inside the set)
     data_1 = ShapeRectangle(g, np.array([obstacle_min[0], -np.inf, -np.inf]), np.array([obstacle_max[0], np.inf, np.inf]))
     data_2 = ShapeRectangle(g, np.array([-np.inf, obstacle_min[1], -np.inf]), np.array([np.inf, obstacle_max[1], np.inf]))
-    data = np.minimum(data_1, data_2)
+    data = np.minimum(data_1, data_2) if combine == "union" else np.maximum(data_1, data_2)
 
     ## Look-back length and time step of computation
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-    # Set system dynamics, control tries to avoid the obstacle
-    sys = DubinsCar(wMax=1, speed=1, uMode="max", dMode="min")
+    # Set system dynamics: union avoids the obstacle (uMode max), intersection reaches the target (uMode min)
+    sys = DubinsCar(wMax=1, speed=1, uMode=U_MODE[combine], dMode="min")
 
     # Same computation method as decomposition_3d.py
     compMethods = {"TargetSetMode": "None"}
@@ -74,7 +76,7 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     if plot:
         os.makedirs('plots', exist_ok=True)
         po = PlotOptions(do_plot=False, plot_type="set", plotDims=[0,1,2], slicesCut=[], colorscale="Bluered",
-                        save_fig=True, filename="plots/direct_result", interactive_html=True)
+                        save_fig=True, filename=f"plots/direct_result_3d_{combine}", interactive_html=True)
         visualize_plots(result, g, po)
 
     return g, result
