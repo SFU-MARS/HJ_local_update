@@ -17,8 +17,7 @@ import plotly.express as px
 from odp.Grid import Grid
 from odp.Shapes import *
 from compute.config_2d import Config, construct2DGrid, Frontier, initConfig
-from dynamics.coupled_2d import couple_u
-from subdynamics.coupled_2d import subsys
+from dynamics import add_dynamics_args
 from common.combine import check_combine
 from common.stats import compareArrays, printCorrectnessStatistics2d
 
@@ -502,6 +501,7 @@ def main():
                         const="",
                         type=int,
                         )    
+    add_dynamics_args(parser, default="coupled_2d")
 
     args = parser.parse_args()
     check_combine(args.combine, ("union", "intersection"), "2d")
@@ -523,7 +523,12 @@ def main():
         
     
     
-    config = initConfig(use_union=use_union, grid_size=grid_size, generate_big_delta=generate_big_delta, big_delta=big_delta)
+    try:
+        config = initConfig(use_union=use_union, grid_size=grid_size, generate_big_delta=generate_big_delta, big_delta=big_delta,
+                            dynamics=args.dynamics, dynamics_params=args.dynamics_params)
+    except (ValueError, TypeError) as e:
+        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
+    print(f"Dynamics: {args.dynamics} {vars(config._sys_2d)}")
     print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
     print("")
 

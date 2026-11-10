@@ -10,11 +10,11 @@ import heterocl as hcl
 import numpy as np
 
 from odp.Grid import Grid
-from odp.dynamics import DubinsCar
-from odp.computeGraphs.CustomGraphFunctions import my_abs, my_max
+from odp.computeGraphs.CustomGraphFunctions import my_abs
 from odp.spatialDerivatives.firstOrderENO.first_orderENO3D import spa_derivX, spa_derivY, spa_derivT
 
 from common.combine import check_combine
+from dynamics import add_dynamics_args, make_dynamics
 from common.leaking import dilate, get_leaking_set
 from common.params import parse_args_with_params
 from common.stats import printCorrectnessStatistics
@@ -112,18 +112,11 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
                             dx_dt, dy_dt, dT_dt = sys.dynamics(0, state, uOpt, (0, 0, 0))
 
                             # Lax-Friedrichs dissipation, alpha is the max rate of change over the control set
-                            r1_x, r1_y, r1_T = sys.dynamics(0, state, (sys.wMax, 0, 0), (0, 0, 0))
-                            r2_x, r2_y, r2_T = sys.dynamics(0, state, (-sys.wMax, 0, 0), (0, 0, 0))
-                            alpha_x = hcl.scalar(0, "alpha_x")
-                            alpha_y = hcl.scalar(0, "alpha_y")
-                            alpha_T = hcl.scalar(0, "alpha_T")
-                            alpha_x[0] = my_max(my_abs(r1_x), my_abs(r2_x))
-                            alpha_y[0] = my_max(my_abs(r1_y), my_abs(r2_y))
-                            alpha_T[0] = my_max(my_abs(r1_T), my_abs(r2_T))
+                            alpha_x, alpha_y, alpha_T = sys.dissipation_coeffs(0, state)
                             diss = hcl.scalar(0, "diss")
-                            diss[0] = 0.5 * ((dV_dx_R[0] - dV_dx_L[0]) * alpha_x[0]
-                                             + (dV_dy_R[0] - dV_dy_L[0]) * alpha_y[0]
-                                             + (dV_dT_R[0] - dV_dT_L[0]) * alpha_T[0])
+                            diss[0] = 0.5 * ((dV_dx_R[0] - dV_dx_L[0]) * alpha_x
+                                             + (dV_dy_R[0] - dV_dy_L[0]) * alpha_y
+                                             + (dV_dT_R[0] - dV_dT_L[0]) * alpha_T)
 
                             # Forward Euler step
                             V_new[i, j, k] = V_prev[i, j, k] + t_step[0] * (
@@ -148,18 +141,20 @@ def load_or_build_kernel(sys, grid, num_steps, threshold, cache_dir="kernels"):
         Returns (kernel, "loaded" or "built").
     '''
     key = (tuple(grid.pts_each_dim), tuple(grid.min), tuple(grid.max), tuple(grid.pDim), num_steps, threshold,
-           type(sys).__name__, sys.wMax, sys.speed, sys.uMode, inspect.getsource(build_local_update_kernel))
+           type(sys).__name__, sorted(vars(sys).items()), inspect.getsource(type(sys)),
+           inspect.getsource(build_local_update_kernel))
     return kernel_cache.load_or_build_kernel(lambda: build_local_update_kernel(sys, grid, num_steps, threshold),
                                              key, "local_update", cache_dir)
 
 
-def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-6, cache_dir="kernels"):
+def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e-6, cache_dir="kernels"):
     '''
         Used by main. Same growing-region local update as local_update_from_file in numpy_impl/local_update_3d.py,
         the update of each time step runs in a parallel HeteroCL kernel.
             decomp_file: npy file of the decomposition result, shape (x, y, theta, t), index 0 of the last axis is t = 0
             leaking: boolean mask of the initial leaking set, see get_leaking_set in numpy_impl/local_update_3d.py
             grid: odp Grid of the 3D system
+            sys: dynamics with HeteroCL methods opt_ctrl, dynamics and dissipation_coeffs (see dynamics/__init__.py)
             t_step: time step used to compute decomp_file
             threshold: a point counts as corrected if it differs from the decomposition by more than this
             cache_dir: directory of the compiled kernels, a kernel built before with the same settings
@@ -173,7 +168,6 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-
 
     # Step 2: build (or load the cached) HeteroCL kernel and copy all inputs to HeteroCL arrays once
     hcl.init(hcl.Float(32))
-    sys = DubinsCar(wMax=1, speed=1, uMode="max", dMode="min")
     total_start = time.time()
     kernel, how = load_or_build_kernel(sys, grid, num_steps, threshold, cache_dir)
     print(f"HeteroCL kernel {how} in {time.time() - total_start:.4f} seconds")
@@ -245,6 +239,7 @@ def main():
     parser.add_argument("--t_step", help="Time step used to compute both files.", default=0.04, type=float)
     parser.add_argument("--cache_dir", help="Directory of the compiled HeteroCL kernels. A kernel built before with the "
                         "same settings is loaded from here instead of being rebuilt.", default="kernels")
+    add_dynamics_args(parser, default="dubins_3d")
     # Values from --params replace the defaults, so command-line arguments still override them
     args = parse_args_with_params(parser)
     if args.decomp_file is None:
@@ -270,7 +265,14 @@ def main():
             parser.error(f"shape mismatch: {path} {data.shape} vs {args.decomp_file} {result_decomp.shape[:-1]} (without t), "
                          "generate them with the same compute/decomposition_3d.py run")
 
-    # Step 2: build the 3D grid with the grid size read from the decomposition file, theta is periodic
+    # Step 2: set the dynamics (--dynamics, --dynamics_params), use the same as the direct computation
+    try:
+        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=3)
+    except (ValueError, TypeError) as e:
+        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
+    print(f"Dynamics: {args.dynamics} {vars(sys)}")
+
+    # Step 2b: build the 3D grid with the grid size read from the decomposition file, theta is periodic
     num = result_decomp.shape[0]
     grid = Grid(np.array([-4.0, -4.0, -math.pi]), np.array([4.0, 4.0, math.pi]), 3, np.array([num, num, num]), [2])
 
@@ -278,7 +280,7 @@ def main():
     leaking = get_leaking_set(data_init_upper, data_init_lower, result_decomp, grid, args.leaking_mode)
 
     # Step 4: run the local update and save the corrected result
-    result_local = local_update_hcl_from_file(args.decomp_file, leaking, grid, args.t_step, cache_dir=args.cache_dir)
+    result_local = local_update_hcl_from_file(args.decomp_file, leaking, grid, sys, args.t_step, cache_dir=args.cache_dir)
     np.save(f'results/result_local_hcl_3d_{args.combine}.npy', result_local)
 
     # Step 5: compare the decomposition and local update results with the direct computation (if given)

@@ -4,6 +4,8 @@
     "init_1": "results/init_1_3d.npy",
     "init_2": "results/init_2_3d.npy",
     "combine": "union",
+    "dynamics": "dubins_3d",
+    "dynamics_params": {"v": 1, "wMax": 1},
     "leaking_mode": "smallest",
     "t_step": 0.04,
     "cache_dir": "kernels"

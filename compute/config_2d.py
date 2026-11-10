@@ -2,6 +2,7 @@ import numpy as np
 import heterocl as hcl
 from dynamics.coupled_2d import couple_u
 from subdynamics.coupled_2d import subsys
+from dynamics import make_dynamics, make_subdynamics
 from odp.Grid import Grid
 from odp.Shapes import *
 
@@ -121,44 +122,21 @@ class Frontier:
         return len(self.activeIndices())
 
 
-def initConfig(use_union: bool, 
-               grid_size: int, 
-               generate_big_delta: int, 
-               big_delta: float,) -> Config:
+def initConfig(use_union: bool,
+               grid_size: int,
+               generate_big_delta: int,
+               big_delta: float,
+               dynamics: str = "coupled_2d",
+               dynamics_params: dict = None) -> Config:
     '''
-        Config of the 2d case: union uses uMode='max' (avoid), intersection uses uMode='min' (reach).
-        Used by numpy_impl/local_update_2d.py and hcl_impl/local_update_2d.py.
+        Config of the 2d case. Used by numpy_impl/local_update_2d.py and hcl_impl/local_update_2d.py.
+            dynamics, dynamics_params: full system dynamics by name and its parameters (see dynamics/__init__.py);
+                the subsystem dynamics of the decomposition are built from the same name and parameters.
+                Union uses uMode='max' (avoid), intersection uses uMode='min' (reach).
     '''
-    if use_union:
-        sys_2d=couple_u(
-            x=[0, 0],
-            uMax=1,
-            dMax=0.0,
-            uMode="max",
-            dMode="min",
-        )
-        subsys_1d=subsys(
-            x=[0],
-            uMax=1,
-            dMax=0.0,
-            uMode="max",
-            dMode="min",
-        )
-    else:
-        sys_2d=couple_u(
-            x=[0, 0],
-            uMax=1,
-            dMax=0.0,
-            uMode="min",
-            dMode="min",
-        )
-        subsys_1d=subsys(
-            x=[0],
-            uMax=1,
-            dMax=0.0,
-            uMode="min",
-            dMode="min",
-        )
+    combine = "union" if use_union else "intersection"
+    sys_2d = make_dynamics(dynamics, dynamics_params, combine, dim=2)
+    subsys_1d, = make_subdynamics(dynamics, dynamics_params, combine, dim=2)
 
     return Config(
         number_of_grid_points=grid_size,

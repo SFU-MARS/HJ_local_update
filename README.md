@@ -38,6 +38,29 @@ Run every command from the repository root. Scripts run as modules, e.g. `python
 
 Saved result files carry the dimension and the setting, e.g. `results/result_decomp_3d_union.npy`.
 
+### Dynamics
+
+Every local update takes the dynamics as input, on the command line or in its parameter file:
+
+- `--dynamics`: name of the full system, one of the entries in [dynamics/__init__.py](dynamics/__init__.py). It must have the dimension of the local update.
+- `--dynamics_params`: its parameters as a JSON object. Anything left out takes the default of the class.
+
+| Name | Dimension | Class | Parameters (default) | Subsystems |
+|---|---|---|---|---|
+| `coupled_2d` | 2 | `dynamics/coupled_2d.py` `couple_u` | `uMax` (1), `dMax` (0) | `subdynamics/coupled_2d.py` `subsys` |
+| `dubins_3d` | 3 | `dynamics/dubins_3d.py` `dubins_car` | `v` (1), `wMax` (1), `dMax` (0) | `subdynamics/dubins_3d.py` `subsys_1`, `subsys_2` |
+| `quadrotor_6d` | 6 | `dynamics/quadrotor_6d.py` `quadrotor` | `uTMax` (1), `utMax` (1), `dMax` (0) | `subdynamics/quadrotor_6d.py` `subsys_1`, `subsys_2` |
+
+```bash
+python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d.json --dynamics_params '{"uMax": 1.5}'
+```
+
+- The control mode follows `--combine`: union = avoid (`uMode` `max`), intersection = reach (`uMode` `min`). So `uMode` is not a parameter, and `dMode` defaults to `min`.
+- Where the local update also runs the decomposition (2d, 6d), the subsystems are built from the same name and parameters.
+- The 3d local update reads the direct computation and decomposition from files. Generate them with the same dynamics: `compute/direct_3d.py` and `compute/decomposition_3d.py` use `v = 1`, `wMax = 1`.
+
+To add a system, write its class (with the methods listed at the top of [dynamics/__init__.py](dynamics/__init__.py)) and its subsystem classes, and add an entry to `DYNAMICS`.
+
 ## 3D Dubins Car
 
 ### Running Local Update
@@ -109,6 +132,8 @@ All arguments can also be given on the command line alone, without `--params`.
 | `--true_file` | no | none | Direct computation result. If not given, the local update runs and saves its result without the comparison |
 | `--init_1`, `--init_2` | no | `results/init_1_3d.npy`, `results/init_2_3d.npy` | Subsystem initial values, used for the leaking set |
 | `--combine` | no | `union` | `union` or `intersection`, only `union` is implemented for 3d |
+| `--dynamics` | no | `dubins_3d` | Dynamics, see [Dynamics](#dynamics) |
+| `--dynamics_params` | no | `{}` | Parameters of the dynamics, e.g. `{"v": 1, "wMax": 1}` |
 | `--leaking_mode` | no | `smallest` | Initial leaking set, `smallest` or `delta`, see below |
 | `--t_step` | no | `0.04` | Time step used to compute the files |
 | `--cache_dir` | no | `kernels` | HeteroCL version only: directory where compiled kernels are saved and loaded |
@@ -174,6 +199,8 @@ Both versions correct the same points at every time step: the leaking corners |V
 |---|---|---|
 | `--params` | none | HeteroCL version only: JSON parameter file holding the arguments below |
 | `--combine` | `intersection` | `union` or `intersection` (replaces the old `--use_union 1/0`) |
+| `--dynamics` | `coupled_2d` | Dynamics, see [Dynamics](#dynamics) |
+| `--dynamics_params` | `{}` | Parameters of the dynamics, e.g. `{"uMax": 1}` |
 | `--grid_size` | `101` | Grid points per dimension |
 | `--generate_big_delta` | `2` | `0`: constant `--big_delta`, `1`: from the initial and final decomposition result, `2`: a new δ at each time step |
 | `--big_delta` | `0.2` | δ used when `--generate_big_delta 0` |
@@ -197,6 +224,7 @@ The local update runs the decomposition itself, finds the leaking set with `new_
 
 ```bash
 python -m numpy_impl.local_update_6d
+python -m numpy_impl.local_update_6d --dynamics quadrotor_6d --dynamics_params '{"uTMax": 1, "utMax": 1}'
 ```
 
 It saves `results/result_decomp_6d_union.npy` and `results/result_local_6d_union.npy`. The direct computation (`compute/direct_6d.py`) is not run, so there is no comparison.
@@ -205,23 +233,24 @@ It saves `results/result_decomp_6d_union.npy` and `results/result_local_6d_union
 
     numpy_impl/local_update_2d.py
     ├── compute/direct_2d.py, compute/decomposition_2d.py, compute/config_2d.py
-    ├── dynamics/coupled_2d.py, subdynamics/coupled_2d.py
+    ├── dynamics/ (--dynamics, default coupled_2d), subdynamics/coupled_2d.py
     └── common/            (spatial_deriv, stats, combine)
 
     hcl_impl/local_update_2d.py
     ├── compute/direct_2d.py, compute/decomposition_2d.py, compute/config_2d.py
-    ├── dynamics/coupled_2d.py (opt_ctrl, dynamics in HeteroCL)
+    ├── dynamics/ (--dynamics, default coupled_2d: opt_ctrl, dynamics in HeteroCL)
     ├── hcl_impl/kernel_cache.py
     └── common/            (spatial_deriv, stats, params, combine)
 
     numpy_impl/local_update_3d.py
-    ├── dynamics/dubins_3d.py
+    ├── dynamics/ (--dynamics, default dubins_3d)
     └── common/            (spatial_deriv, leaking, stats, params, combine)
 
     hcl_impl/local_update_3d.py
+    ├── dynamics/ (--dynamics, default dubins_3d: opt_ctrl, dynamics, dissipation_coeffs in HeteroCL)
     ├── hcl_impl/kernel_cache.py
     ├── common/            (leaking, stats, params, combine)
-    └── odp                (DubinsCar, 1st order ENO derivatives)
+    └── odp                (1st order ENO derivatives)
 
     compute/direct_3d.py   (odp HJSolver, DubinsCar)
     compute/decomposition_3d.py (odp HJSolver)
@@ -229,8 +258,8 @@ It saves `results/result_decomp_6d_union.npy` and `results/result_local_6d_union
 
     numpy_impl/local_update_6d.py
     ├── compute/decomposition_6d.py
-    │   └── subdynamics/quadrotor_6d.py
-    ├── dynamics/quadrotor_6d.py
+    │   └── subdynamics/ (from --dynamics)
+    ├── dynamics/ (--dynamics, default quadrotor_6d)
     └── common/            (spatial_deriv, leaking, combine)
 
 `common/plotting.py` holds the overlay plots from the 2d and 6d cases. It needs `pre_plot` from `odp.Plots`, which the current optimized_dp no longer has, so it cannot be imported with the current version. No script imports it.

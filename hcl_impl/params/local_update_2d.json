@@ -1,5 +1,7 @@
 {
     "combine": "union",
+    "dynamics": "coupled_2d",
+    "dynamics_params": {"uMax": 1},
     "grid_size": 101,
     "generate_big_delta": 2,
     "big_delta": 0.2,

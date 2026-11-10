@@ -5,7 +5,7 @@ import os
 
 def parse_args_with_params(parser):
     '''
-        Used by main in numpy_impl/local_update_3d.py and hcl_impl/local_update_3d.py. Parse the command line of a parser that has a --params
+        Used by main of the local update scripts. Parse the command line of a parser that has a --params
         argument. The keys of the JSON file given by --params (argument names without '--') replace the
         defaults, so arguments given on the command line still override the file.
         Returns the parsed arguments.
@@ -28,3 +28,19 @@ def parse_args_with_params(parser):
                 parser.error(f"{key} in {params_path} must be one of {list(action.choices)}, got {value!r}")
         parser.set_defaults(**params)
     return parser.parse_args()
+
+
+def json_object(value):
+    '''
+        argparse type for a JSON object: a dict from a --params file, or a JSON string on the command
+        line, e.g. --dynamics_params '{"v": 1, "wMax": 1}'.
+    '''
+    if isinstance(value, dict):
+        return value
+    try:
+        obj = json.loads(value)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"not valid JSON: {value!r} ({e})")
+    if not isinstance(obj, dict):
+        raise ValueError(f"must be a JSON object like {{\"v\": 1}}, got {value!r}")
+    return obj

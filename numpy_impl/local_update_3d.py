@@ -9,7 +9,7 @@ import sys as py_sys
 
 from odp.Grid import Grid
 
-from dynamics.dubins_3d import dubins_car
+from dynamics import add_dynamics_args, make_dynamics
 from common.combine import check_combine
 from common.leaking import get_leaking_set, dilate
 from common.params import parse_args_with_params
@@ -44,9 +44,7 @@ def recomputeValueChange(data, x, y, z, grid, sys, t, t_step):
 
     # Lax-Friedrichs dissipation, alpha is the max rate of change over the control set,
     # same as optimized_dp
-    rates_1 = sys.dynamics_numpy(t, state, (sys.wMax,), 0)
-    rates_2 = sys.dynamics_numpy(t, state, (-sys.wMax,), 0)
-    alpha_x, alpha_y, alpha_T = np.maximum(np.abs(rates_1), np.abs(rates_2))
+    alpha_x, alpha_y, alpha_T = sys.dissipation_coeffs_numpy(t, state)
     diss = 0.5 * ((dV_dx_R - dV_dx_L) * alpha_x + (dV_dy_R - dV_dy_L) * alpha_y + (dV_dT_R - dV_dT_L) * alpha_T)
 
     # Updating the value function
@@ -127,6 +125,7 @@ def main():
     parser.add_argument("--t_step", help="Time step used to compute both files. Keep it below the CFL bound of HJSolver "
                         "(about 0.048 for a 41^3 grid) so that HJSolver takes exactly one Euler step per time step.",
                         default=0.04, type=float)
+    add_dynamics_args(parser, default="dubins_3d")
     args = parse_args_with_params(parser)
 
     if args.decomp_file is None:
@@ -151,8 +150,12 @@ def main():
             parser.error(f"shape mismatch: {path} {data.shape} vs {args.decomp_file} {decomp_shape[:-1]} (without t), "
                          "generate them with the same compute/decomposition_3d.py run")
 
-    # Step 2: set the dynamics, same as the direct computation, control tries to avoid the obstacle
-    sys = dubins_car(v=1, wMax=1, dMax=0.0, uMode='max', dMode='min')
+    # Step 2: set the dynamics (--dynamics, --dynamics_params), use the same as the direct computation
+    try:
+        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=3)
+    except (ValueError, TypeError) as e:
+        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
+    print(f"Dynamics: {args.dynamics} {vars(sys)}")
 
     # Step 3: build the 3D grid with the grid size read from the decomposition file, theta is periodic
     num = np.load(args.decomp_file, mmap_mode='r').shape[0]

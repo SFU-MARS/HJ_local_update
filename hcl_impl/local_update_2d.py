@@ -14,7 +14,7 @@ import numpy as np
 from compute.config_2d import initConfig
 from compute.decomposition_2d import decomposition, DecompositionResult
 from compute.direct_2d import direct_computation
-from dynamics.coupled_2d import couple_u
+from dynamics import add_dynamics_args
 from common.combine import check_combine
 from common.params import parse_args_with_params
 from common.stats import printCorrectnessStatistics2d
@@ -165,7 +165,7 @@ def local_update_hcl(decomposition_result: DecompositionResult, config, cache_di
     hcl.init(DTYPE)
     total_start = time.time()
     key = (tuple(grid.pts_each_dim), tuple(grid.min), tuple(grid.max), tuple(grid.pDim), num_steps, threshold,
-           type(sys).__name__, sys.uMax, sys.uMode, inspect.getsource(couple_u),
+           type(sys).__name__, sorted(vars(sys).items()), inspect.getsource(type(sys)),
            inspect.getsource(build_local_update_kernel), inspect.getsource(spatial_deriv))
     kernel, how = load_or_build_kernel(lambda: build_local_update_kernel(sys, grid, num_steps, threshold),
                                        key, "local_update_2d", cache_dir)
@@ -239,6 +239,7 @@ def main():
     parser.add_argument("--cache_dir", default="kernels",
                         help="Directory of the compiled HeteroCL kernels. A kernel built before with the same "
                         "settings is loaded from here instead of being rebuilt.")
+    add_dynamics_args(parser, default="coupled_2d")
     args = parse_args_with_params(parser)
     check_combine(args.combine, ("union", "intersection"), "2d")
     print(f"combine: {args.combine}")
@@ -246,8 +247,12 @@ def main():
     print(f"Grid size: {args.grid_size} x {args.grid_size}")
 
     # Step 2: direct computation and decomposition (numpy, same as the numpy version)
-    config = initConfig(use_union=args.combine == "union", grid_size=args.grid_size,
-                        generate_big_delta=args.generate_big_delta, big_delta=args.big_delta)
+    try:
+        config = initConfig(use_union=args.combine == "union", grid_size=args.grid_size, generate_big_delta=args.generate_big_delta, big_delta=args.big_delta,
+                            dynamics=args.dynamics, dynamics_params=args.dynamics_params)
+    except (ValueError, TypeError) as e:
+        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
+    print(f"Dynamics: {args.dynamics} {vars(config._sys_2d)}")
     print(f"Number of time_steps: {int(config._lookback_length/config._time_step)}")
     print("")
     grid, result_true = direct_computation(config=config, saveAllTimeStep=True)

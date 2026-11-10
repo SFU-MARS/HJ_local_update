@@ -15,10 +15,12 @@ import os
 
 from common.combine import check_combine
 
-def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="union"):
+def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="union", subsystems=None):
     '''
         Decomposition of the 6D quadrotor into two 4D subsystems, combined as min(V1, V2).
             combine: "union" (only union is implemented for 6d)
+            subsystems: (subsystem 1, subsystem 2) dynamics, e.g. from dynamics.make_subdynamics;
+                None uses subsys_1, subsys_2 with uTMax=1, utMax=1, uMode='max'
         Saves results/result_decomp_6d_<combine>.npy.
     '''
     check_combine(combine, ("union",), "6d")
@@ -51,8 +53,11 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="unio
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
     
     # Set system dynamics
-    sys_1 = subsys_1(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
-    sys_2 = subsys_2(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
+    if subsystems is None:
+        sys_1 = subsys_1(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
+        sys_2 = subsys_2(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
+    else:
+        sys_1, sys_2 = subsystems
     
     list_x0 = np.reshape(g.vs[0], g.pts_each_dim[0])
     list_x1 = np.reshape(g.vs[1], g.pts_each_dim[1])

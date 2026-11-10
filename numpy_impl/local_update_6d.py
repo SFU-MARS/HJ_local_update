@@ -18,7 +18,7 @@ import plotly.express as px
 from odp.Grid import Grid
 from odp.Shapes import *
 
-from dynamics.quadrotor_6d import quadrotor
+from dynamics import add_dynamics_args, make_dynamics, make_subdynamics
 
 # The function of computing first order spatial derivative
 from common.spatial_deriv import spa_deriv
@@ -37,15 +37,23 @@ def main():
     parser.add_argument("--combine", choices=["union", "intersection"], default="union",
                         help="How the subsystems are combined: 'union' = min(V1, V2), 'intersection' = max(V1, V2). "
                         "Only union is implemented for 6d.")
+    add_dynamics_args(parser, default="quadrotor_6d")
     args = parser.parse_args()
     try:
         check_combine(args.combine, ("union",), "6d")
     except NotImplementedError as e:
         parser.error(str(e))
     combine = args.combine
+    try:
+        sys = make_dynamics(args.dynamics, args.dynamics_params, combine, dim=6)
+        subsystems = make_subdynamics(args.dynamics, args.dynamics_params, combine, dim=6)
+    except (ValueError, TypeError) as e:
+        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
+    print(f"Dynamics: {args.dynamics} {vars(sys)}")
 
     # grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
-    result_decomp, result_upper, result_lower = decomposition(num, saveAllTimeStep=True, lookback_length=lookback_length, combine=combine)
+    result_decomp, result_upper, result_lower = decomposition(num, saveAllTimeStep=True, lookback_length=lookback_length, combine=combine,
+                                                              subsystems=subsystems)
 
     print('The size of the decomposition result', result_decomp.shape)
 
@@ -99,7 +107,6 @@ def main():
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-    sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
 
     # Initialize the value function
     # data_init = ShapeRectangle(grid, [-1.0, -1.0, -1.0, -1.0, -math.pi, -1.0], [1.0, 1.0, 1.0, 1.0, math.pi, 1.0])
