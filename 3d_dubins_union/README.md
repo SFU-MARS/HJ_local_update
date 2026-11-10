@@ -31,6 +31,8 @@ python local_update_hcl.py --decomp_file results/result_decomp_3d.npy --true_fil
 
 `init_1.npy` and `init_2.npy` are the subsystem initial values V1(x, θ) and V2(y, θ) on the 3D grid, saved by `decomposition.py`. They are used to find the initial leaking set |V1 − V2| < δ.
 
+`--true_file` is optional. Without it, the local update still runs and saves its result, but skips the comparison with the direct computation.
+
 The HeteroCL version saves the compiled kernel in `kernels/` on the first run and loads it on later runs.
 
 Run all commands inside `3d_dubins_union`.

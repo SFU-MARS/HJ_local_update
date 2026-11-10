@@ -176,7 +176,8 @@ def main():
     # Step 1: parse and check the command-line inputs
     parser = argparse.ArgumentParser()
     parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, theta, t).", default=None)
-    parser.add_argument("--true_file", help="npy file of the direct computation result, same shape as --decomp_file.", default=None)
+    parser.add_argument("--true_file", help="Optional npy file of the direct computation result, same shape as --decomp_file. "
+                        "If not given, the local update runs without the comparison.", default=None)
     parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1, shape (x, y, theta), "
                         "saved by decomposition.py.", default="results/init_1.npy")
     parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2, shape (x, y, theta), "
@@ -186,18 +187,17 @@ def main():
                         default=0.04, type=float)
     args = parser.parse_args()
 
-    missing = [name for name, value in (("--decomp_file", args.decomp_file), ("--true_file", args.true_file)) if value is None]
-    if missing:
-        parser.error(f"need file inputs {' and '.join(missing)} (e.g. --decomp_file results/result_decomp_3d.npy "
-                     "--true_file results/result_direct_3d.npy)")
+    if args.decomp_file is None:
+        parser.error("need file input --decomp_file (e.g. --decomp_file results/result_decomp_3d.npy)")
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
-        if not os.path.isfile(path):
+        if path is not None and not os.path.isfile(path):
             parser.error(f"file not found: {path}")
     decomp_shape = np.load(args.decomp_file, mmap_mode='r').shape
-    true_shape = np.load(args.true_file, mmap_mode='r').shape
-    if decomp_shape != true_shape:
-        parser.error(f"shape mismatch: {args.decomp_file} {decomp_shape} vs {args.true_file} {true_shape}, "
-                     "generate both files with the same t_step and accuracy (see README)")
+    if args.true_file is not None:
+        true_shape = np.load(args.true_file, mmap_mode='r').shape
+        if decomp_shape != true_shape:
+            parser.error(f"shape mismatch: {args.decomp_file} {decomp_shape} vs {args.true_file} {true_shape}, "
+                         "generate both files with the same t_step and accuracy (see README)")
     data_init_upper = np.load(args.init_1)
     data_init_lower = np.load(args.init_2)
     for path, data in ((args.init_1, data_init_upper), (args.init_2, data_init_lower)):
@@ -219,8 +219,11 @@ def main():
     result_local = local_update_from_file(args.decomp_file, leaking, grid, sys, args.t_step)
     np.save('results/result_local_3d.npy', result_local)
 
-    # Step 6: compare the decomposition and local update results with the direct computation
-    printCorrectnessStatistics(np.load(args.true_file), np.load(args.decomp_file), result_local)
+    # Step 6: compare the decomposition and local update results with the direct computation (if given)
+    if args.true_file is not None:
+        printCorrectnessStatistics(np.load(args.true_file), np.load(args.decomp_file), result_local)
+    else:
+        print("No --true_file given, skipping the comparison with the direct computation")
 
 
 if __name__ == "__main__":
