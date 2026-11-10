@@ -8,7 +8,7 @@ import copy
 # import cv2
 import sys as py_sys
 
-# from common.plotting_2d import *
+# from common.plotting import *
 from odp.Plots import PlotOptions
 from odp.Plots import plot_isosurface, plot_valuefunction
 
@@ -20,6 +20,7 @@ from compute.config_2d import Config, construct2DGrid, Frontier
 from dynamics.coupled_2d import couple_u
 from subdynamics.coupled_2d import subsys
 from common.combine import check_combine
+from common.stats import compareArrays
 
 # The function of computing first order spatial derivative
 from common.spatial_deriv_2d import spa_derivX, spa_derivY
@@ -560,21 +561,6 @@ def printResults(result_list):
         print(i)
         print(result)
         i += 1
-
-def compareArrays(array1, array2, number_of_precision_points=8, debug=False):
-    diff_array = abs(array1 - array2)
-    if debug:
-        print(f"array1: \n{array1}")
-        print(f"array2: \n{array2}")
-        print(f"diff_array: \n{diff_array}")
-
-    for precision in range(1, number_of_precision_points):
-        precision_value = 1 / (10**precision)
-        number_of_entires_with_error = len(
-            np.argwhere(abs(diff_array) > precision_value)
-        )
-        # print(f"1e-{precision}: {precision_value} {number_of_entires_with_error}")
-        print(f"{precision_value}: {number_of_entires_with_error}")
 
 def main():
     # Initializtion

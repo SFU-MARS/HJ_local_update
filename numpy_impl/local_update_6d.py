@@ -9,7 +9,7 @@ import heterocl as hcl
 import math
 # import cv2
 
-# from common.plotting_6d import *  (unused here, and it needs pre_plot, which the current optimized_dp no longer has)
+# from common.plotting import *  (unused here, and it needs pre_plot, which the current optimized_dp no longer has)
 from odp.Plots import PlotOptions
 from odp.Plots import plot_isosurface, plot_valuefunction
 
@@ -23,7 +23,7 @@ from dynamics.quadrotor_6d import quadrotor
 # The function of computing first order spatial derivative
 from common.spatial_deriv_6d import spa_deriv6X1, spa_deriv6X2, spa_deriv6X3, spa_deriv6X4, spa_deriv6X5, spa_deriv6X6
 
-from common.leaking_6d import *
+from common.leaking import ground_truth_L, new_theory_L, ground_truth_delta
 from common.combine import check_combine
 
 import time

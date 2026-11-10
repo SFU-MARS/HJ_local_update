@@ -1,7 +1,6 @@
 # Local update of the 3D Dubins car decomposition result, pure numpy version.
 # Corrects the decomposition result near the leaking corners so it matches the direct computation.
 import argparse
-import json
 
 import numpy as np
 import math
@@ -12,6 +11,9 @@ from odp.Grid import Grid
 
 from dynamics.dubins_3d import dubins_car
 from common.combine import check_combine
+from common.leaking import get_leaking_set, dilate
+from common.params import parse_args_with_params
+from common.stats import printCorrectnessStatistics
 
 # The function of computing first order spatial derivative
 from common.spatial_deriv_3d import spa_deriv3X1, spa_deriv3X2, spa_deriv3X3
@@ -50,45 +52,6 @@ def recomputeValueChange(data, x, y, z, grid, sys, t, t_step):
     # Updating the value function
     data_change = dx_dt * dV_dx + dy_dt * dV_dy + dT_dt * dV_dT + diss
     return data_change * t_step
-
-
-def dilate(mask, grid):
-    '''
-        Add the neighbours of every True point along each dimension (the stencil of the
-        first order scheme). Periodic dimensions wrap around.
-    '''
-    out = mask.copy()
-    for dim in range(mask.ndim):
-        if dim in grid.pDim:
-            out |= np.roll(mask, 1, axis=dim) | np.roll(mask, -1, axis=dim)
-        else:
-            lo = [slice(None)] * mask.ndim
-            hi = [slice(None)] * mask.ndim
-            lo[dim] = slice(None, -1)
-            hi[dim] = slice(1, None)
-            out[tuple(hi)] |= mask[tuple(lo)]
-            out[tuple(lo)] |= mask[tuple(hi)]
-    return out
-
-
-def get_leaking_set(data_init_upper, data_init_lower, result_decomp, grid, mode="smallest"):
-    '''
-        Initial leaking set: points where the decomposition min(V1, V2) can be wrong.
-            mode="smallest" (default): the switching surface V1 = V2 plus its neighbours,
-                dilate(|V1 - V2| < 1e-9). Smallest set that gives the full correction, no tuning.
-            mode="delta": |V1 - V2| < delta, with delta = max|initial value - final
-                decomposition result| (new_theory_L in common/leaking_6d.py). Conservative, larger set.
-    '''
-    if mode == "smallest":
-        leaking = dilate(abs(data_init_upper - data_init_lower) < 1e-9, grid)
-    elif mode == "delta":
-        delta = np.max(abs(result_decomp[..., 0] - result_decomp[..., -1]))
-        print('The delta value is', delta)
-        leaking = abs(data_init_upper - data_init_lower) < delta
-    else:
-        raise ValueError(f"unknown leaking mode: {mode}")
-    print(f"The number of leaking corner points: {leaking.sum()} / {leaking.size}")
-    return leaking
 
 
 def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e-6):
@@ -140,72 +103,6 @@ def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e
     print(f"Total point updates: {total_updated} / {data_init.size * (result_decomp.shape[-1] - 1)}")
 
     return result_local
-
-
-def compareArrays(array1, array2, number_of_precision_points=8):
-    diff_array = abs(array1 - array2)
-    for precision in range(1, number_of_precision_points):
-        precision_value = 1 / (10**precision)
-        number_of_entires_with_error = len(np.argwhere(diff_array > precision_value))
-        print(f"{precision_value}: {number_of_entires_with_error}")
-
-
-def printCorrectnessStatistics(result_true, result_decomp, result_local):
-    print("Processing stats")
-    print("================================================")
-
-    '''
-    Comparision with direct computation at the final time step
-    '''
-    true_final = result_true[..., -1]
-    decomp_final = result_decomp[..., -1]
-    local_final = result_local[..., -1]
-
-    total_num_of_points = true_final.size
-    print(f"The total number of points: {total_num_of_points}")
-    print(f"Decomposition method: Number of points with different values (1e-6): {np.argwhere(abs(decomp_final - true_final) > 1e-6).shape}")
-    print(f"After local update, Number of points with different values (1e-6): {np.argwhere(abs(local_final - true_final) > 1e-6).shape}")
-
-    print(f"The average absolute error between direct computation and decomposition: {np.sum(abs(decomp_final - true_final)) / total_num_of_points:0.10f}")
-    print(f"The average absolute error between direct computation and local updates: {np.sum(abs(local_final - true_final)) / total_num_of_points:0.10f}")
-    print(f"The maximum absolute error between direct computation and decomposition: {np.max(abs(decomp_final - true_final)):0.10f}")
-    print(f"The maximum absolute error between direct computation and local updates: {np.max(abs(local_final - true_final)):0.10f}")
-
-    # Zero level set comparison
-    print(f"Points with different sign (set mismatch), decomposition: {np.sum((decomp_final < 0) != (true_final < 0))}")
-    print(f"Points with different sign (set mismatch), local update: {np.sum((local_final < 0) != (true_final < 0))}")
-
-    print("Number of values with error b/w direct computation and decomposition:")
-    compareArrays(true_final, decomp_final)
-    print("Number of values with error b/w direct computation and local update:")
-    compareArrays(true_final, local_final)
-
-
-def parse_args_with_params(parser):
-    '''
-        Used by main here and in hcl_impl/local_update_3d.py. Parse the command line of a parser that has a --params
-        argument. The keys of the JSON file given by --params (argument names without '--') replace the
-        defaults, so arguments given on the command line still override the file.
-        Returns the parsed arguments.
-    '''
-    params_path = parser.parse_known_args()[0].params
-    if params_path is not None:
-        if not os.path.isfile(params_path):
-            parser.error(f"file not found: {params_path}")
-        with open(params_path) as f:
-            params = json.load(f)
-        actions = {action.dest: action for action in parser._actions}
-        unknown = sorted(set(params) - set(actions) - {"params"})
-        if unknown:
-            parser.error(f"unknown keys in {params_path}: {unknown}")
-        for key, value in params.items():
-            action = actions[key]
-            if value is not None and action.type is not None:
-                params[key] = action.type(value)
-            if action.choices is not None and params[key] not in action.choices:
-                parser.error(f"{key} in {params_path} must be one of {list(action.choices)}, got {value!r}")
-        parser.set_defaults(**params)
-    return parser.parse_args()
 
 
 def main():

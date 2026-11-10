@@ -17,7 +17,9 @@ from odp.computeGraphs.CustomGraphFunctions import my_abs, my_max
 from odp.spatialDerivatives.firstOrderENO.first_orderENO3D import spa_derivX, spa_derivY, spa_derivT
 
 from common.combine import check_combine
-from numpy_impl.local_update_3d import dilate, get_leaking_set, parse_args_with_params, printCorrectnessStatistics
+from common.leaking import dilate, get_leaking_set
+from common.params import parse_args_with_params
+from common.stats import printCorrectnessStatistics
 
 
 def build_local_update_kernel(sys, grid, num_steps, threshold):
