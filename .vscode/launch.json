@@ -5,10 +5,21 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "main",
+      "name": "3d local update (numpy)",
       "type": "debugpy",
       "request": "launch",
-      "program": "main.py",
+      "module": "numpy_impl.local_update_3d",
+      "args": ["--params", "numpy_impl/params/local_update_3d.json"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "3d local update (HeteroCL)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "hcl_impl.local_update_3d",
+      "args": ["--params", "hcl_impl/params/local_update_3d.json"],
+      "cwd": "${workspaceFolder}",
       "console": "integratedTerminal"
     }
   ]
