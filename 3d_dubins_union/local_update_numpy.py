@@ -69,15 +69,22 @@ def dilate(mask, grid):
     return out
 
 
-def get_leaking_set(data_init_upper, data_init_lower, result_decomp):
+def get_leaking_set(data_init_upper, data_init_lower, result_decomp, grid, mode="smallest"):
     '''
-        Initial leaking set: points where the two subsystem initial values are close,
-        |V1 - V2| < delta, so the decomposition min(V1, V2) can be wrong there (new_theory_L in 6d_union).
-        delta = max|initial value - final decomposition result|.
+        Initial leaking set: points where the decomposition min(V1, V2) can be wrong.
+            mode="smallest" (default): the switching surface V1 = V2 plus its neighbours,
+                dilate(|V1 - V2| < 1e-9). Smallest set that gives the full correction, no tuning.
+            mode="delta": |V1 - V2| < delta, with delta = max|initial value - final
+                decomposition result| (new_theory_L in 6d_union). Conservative, larger set.
     '''
-    delta = np.max(abs(result_decomp[..., 0] - result_decomp[..., -1]))
-    print('The delta value is', delta)
-    leaking = abs(data_init_upper - data_init_lower) < delta
+    if mode == "smallest":
+        leaking = dilate(abs(data_init_upper - data_init_lower) < 1e-9, grid)
+    elif mode == "delta":
+        delta = np.max(abs(result_decomp[..., 0] - result_decomp[..., -1]))
+        print('The delta value is', delta)
+        leaking = abs(data_init_upper - data_init_lower) < delta
+    else:
+        raise ValueError(f"unknown leaking mode: {mode}")
     print(f"The number of leaking corner points: {leaking.sum()} / {leaking.size}")
     return leaking
 
@@ -182,6 +189,9 @@ def main():
                         "saved by decomposition.py.", default="results/init_1.npy")
     parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2, shape (x, y, theta), "
                         "saved by decomposition.py.", default="results/init_2.npy")
+    parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
+                        help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
+                        "'delta' = |V1 - V2| < delta.")
     parser.add_argument("--t_step", help="Time step used to compute both files. Keep it below the CFL bound of HJSolver "
                         "(about 0.048 for a 41^3 grid) so that HJSolver takes exactly one Euler step per time step.",
                         default=0.04, type=float)
@@ -213,7 +223,7 @@ def main():
     grid = Grid(np.array([-4.0, -4.0, -math.pi]), np.array([4.0, 4.0, math.pi]), 3, np.array([num, num, num]), [2])
 
     # Step 4: initial leaking set from the subsystem initial values (--init_1, --init_2)
-    leaking = get_leaking_set(data_init_upper, data_init_lower, np.load(args.decomp_file))
+    leaking = get_leaking_set(data_init_upper, data_init_lower, np.load(args.decomp_file), grid, args.leaking_mode)
 
     # Step 5: run the local update and save the corrected result
     result_local = local_update_from_file(args.decomp_file, leaking, grid, sys, args.t_step)

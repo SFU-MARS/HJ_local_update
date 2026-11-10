@@ -234,6 +234,9 @@ def main():
                         "saved by decomposition.py.", default="results/init_1.npy")
     parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2, shape (x, y, theta), "
                         "saved by decomposition.py.", default="results/init_2.npy")
+    parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
+                        help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
+                        "'delta' = |V1 - V2| < delta.")
     parser.add_argument("--t_step", help="Time step used to compute both files.", default=0.04, type=float)
     args = parser.parse_args()
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
@@ -258,7 +261,7 @@ def main():
     grid = Grid(np.array([-4.0, -4.0, -math.pi]), np.array([4.0, 4.0, math.pi]), 3, np.array([num, num, num]), [2])
 
     # Step 3: initial leaking set from the subsystem initial values (--init_1, --init_2)
-    leaking = get_leaking_set(data_init_upper, data_init_lower, result_decomp)
+    leaking = get_leaking_set(data_init_upper, data_init_lower, result_decomp, grid, args.leaking_mode)
 
     # Step 4: run the local update and save the corrected result
     result_local = local_update_hcl_from_file(args.decomp_file, leaking, grid, args.t_step)
