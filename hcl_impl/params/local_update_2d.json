@@ -1,0 +1,8 @@
+{
+    "combine": "union",
+    "grid_size": 101,
+    "generate_big_delta": 2,
+    "big_delta": 0.2,
+    "debug": 0,
+    "cache_dir": "kernels"
+}

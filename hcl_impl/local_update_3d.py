@@ -1,14 +1,12 @@
 # Local update of the 3D Dubins car decomposition result, parallel HeteroCL version.
 # Same update as numpy_impl/local_update_3d.py; the compiled kernel is cached in kernels/ to skip rebuilding.
 import argparse
-import hashlib
 import inspect
 import math
 import os
 import time
 
 import heterocl as hcl
-from heterocl.tvm import module as hcl_module
 import numpy as np
 
 from odp.Grid import Grid
@@ -20,6 +18,7 @@ from common.combine import check_combine
 from common.leaking import dilate, get_leaking_set
 from common.params import parse_args_with_params
 from common.stats import printCorrectnessStatistics
+from hcl_impl import kernel_cache
 
 
 def build_local_update_kernel(sys, grid, num_steps, threshold):
@@ -143,20 +142,15 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
 def load_or_build_kernel(sys, grid, num_steps, threshold, cache_dir="kernels"):
     '''
         Used by local_update_hcl_from_file. Load the compiled kernel from cache_dir if it was built
-        before with the same settings, otherwise build it and save it there. The file name includes
-        the grid size, number of time steps, threshold, dynamics parameters and a hash of the kernel
-        source code, so any change builds a new kernel.
+        before with the same settings, otherwise build it and save it there (see hcl_impl/kernel_cache.py).
+        The key includes the grid size, number of time steps, threshold, dynamics parameters and the
+        kernel source code, so any change builds a new kernel.
         Returns (kernel, "loaded" or "built").
     '''
-    key = repr((tuple(grid.pts_each_dim), tuple(grid.min), tuple(grid.max), tuple(grid.pDim), num_steps, threshold,
-                type(sys).__name__, sys.wMax, sys.speed, sys.uMode, inspect.getsource(build_local_update_kernel)))
-    path = os.path.join(cache_dir, f"local_update_{hashlib.md5(key.encode()).hexdigest()[:12]}.so")
-    if os.path.isfile(path):
-        return hcl_module.load(path), "loaded"
-    kernel = build_local_update_kernel(sys, grid, num_steps, threshold)
-    os.makedirs(cache_dir, exist_ok=True)
-    kernel.export_library(path)
-    return kernel, "built"
+    key = (tuple(grid.pts_each_dim), tuple(grid.min), tuple(grid.max), tuple(grid.pDim), num_steps, threshold,
+           type(sys).__name__, sys.wMax, sys.speed, sys.uMode, inspect.getsource(build_local_update_kernel))
+    return kernel_cache.load_or_build_kernel(lambda: build_local_update_kernel(sys, grid, num_steps, threshold),
+                                             key, "local_update", cache_dir)
 
 
 def local_update_hcl_from_file(decomp_file, leaking, grid, t_step, threshold=1e-6, cache_dir="kernels"):

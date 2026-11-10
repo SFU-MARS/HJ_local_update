@@ -119,4 +119,57 @@ class Frontier:
     
     def count(self):
         return len(self.activeIndices())
-        
+
+
+def initConfig(use_union: bool, 
+               grid_size: int, 
+               generate_big_delta: int, 
+               big_delta: float,) -> Config:
+    '''
+        Config of the 2d case: union uses uMode='max' (avoid), intersection uses uMode='min' (reach).
+        Used by numpy_impl/local_update_2d.py and hcl_impl/local_update_2d.py.
+    '''
+    if use_union:
+        sys_2d=couple_u(
+            x=[0, 0],
+            uMax=1,
+            dMax=0.0,
+            uMode="max",
+            dMode="min",
+        )
+        subsys_1d=subsys(
+            x=[0],
+            uMax=1,
+            dMax=0.0,
+            uMode="max",
+            dMode="min",
+        )
+    else:
+        sys_2d=couple_u(
+            x=[0, 0],
+            uMax=1,
+            dMax=0.0,
+            uMode="min",
+            dMode="min",
+        )
+        subsys_1d=subsys(
+            x=[0],
+            uMax=1,
+            dMax=0.0,
+            uMode="min",
+            dMode="min",
+        )
+
+    return Config(
+        number_of_grid_points=grid_size,
+        lookback_length=0.20,
+        time_step=0.02,
+        small_number=1e-5,
+        sys_2d=sys_2d,
+        subsys_1d=subsys_1d,
+        use_union=use_union,
+        threshold2=1e-6,
+        use_optimization1=True,
+        generate_big_delta=generate_big_delta,
+        big_delta=big_delta,
+    )

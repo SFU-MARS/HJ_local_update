@@ -35,7 +35,9 @@ class couple_u:
         y_term = hcl.scalar(0, "y_term") 
         
         r_term = hcl.scalar(0, "r_term")
-        r_term[0] = hcl.sqrt(spat_deriv[0]*spat_deriv[0]+spat_deriv[1]*spat_deriv[1])+1e-15 # get square root
+        # 1e-15 is built with the type of spat_deriv, since a plain Python float in a kernel becomes a 32-bit constant
+        eps = hcl.tvm.const(1e-15, str(spat_deriv[0].dtype))
+        r_term[0] = hcl.sqrt(spat_deriv[0]*spat_deriv[0]+spat_deriv[1]*spat_deriv[1])+eps # get square root
         
         # print('r_term is', r_term[0])
         

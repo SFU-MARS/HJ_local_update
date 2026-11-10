@@ -15,7 +15,7 @@ The dimension of each case is in the file name: `_2d`, `_3d`, `_6d`.
     compute/           direct computation (ground truth) and decomposition of each case
     numpy_impl/        local update, numpy: local_update_2d.py, local_update_3d.py, local_update_6d.py
       params/          parameter files of the numpy local updates
-    hcl_impl/          local update, parallel HeteroCL: local_update_3d.py
+    hcl_impl/          local update, HeteroCL: local_update_2d.py, local_update_3d.py
       params/          parameter files of the HeteroCL local updates
     common/            code shared by the cases (spatial derivative, leaking set, statistics, parameter files, plots)
     results/           saved results, created when you run (not in git)
@@ -149,20 +149,47 @@ True leaking corners are the points where the decomposition error starts. At som
 
 ## 2D Coupled Control
 
-The local update runs the direct computation and the decomposition itself, then corrects the decomposition and prints the comparison. Nothing is saved.
+The leaking corner issue shows up in two settings, and `--combine` picks which:
+
+- `union`: V = min(V1, V2), avoid (uMode `max`)
+- `intersection`: V = max(V1, V2), reach (uMode `min`)
+
+The local update runs the direct computation and the decomposition itself (numpy, in `compute/`), then corrects the decomposition and prints the comparison. Nothing is saved. Numpy version:
 
 ```bash
 python -m numpy_impl.local_update_2d --grid_size 101 --combine union
 python -m numpy_impl.local_update_2d --grid_size 101 --combine intersection
 ```
 
+HeteroCL version, with a parameter file ([hcl_impl/params/local_update_2d.json](hcl_impl/params/local_update_2d.json)) or the same arguments on the command line:
+
+```bash
+python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d.json
+python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d.json --combine intersection
+```
+
+Both versions correct the same points at every time step: the leaking corners |V1 − V2| < δ, plus the neighbours of every corrected point that changed by more than 1e-6, repeated until no new point joins. The HeteroCL version does this in one kernel per time step, with 64-bit floats like numpy. Its values agree with numpy within 5e-16, since the compiled arithmetic rounds a little differently in the last bit. It saves the compiled kernel in `kernels/` on the first run and loads it on later runs.
+
 | Argument | Default | Description |
 |---|---|---|
+| `--params` | none | HeteroCL version only: JSON parameter file holding the arguments below |
 | `--combine` | `intersection` | `union` or `intersection` (replaces the old `--use_union 1/0`) |
 | `--grid_size` | `101` | Grid points per dimension |
 | `--generate_big_delta` | `2` | `0`: constant `--big_delta`, `1`: from the initial and final decomposition result, `2`: a new δ at each time step |
 | `--big_delta` | `0.2` | δ used when `--generate_big_delta 0` |
-| `--debug` | `0` | `1` prints debug logs |
+| `--debug` | `0` | `1` prints the stats of each time step |
+| `--cache_dir` | `kernels` | HeteroCL version only: directory where compiled kernels are saved and loaded |
+
+Correction time, 10 time steps, measured on a machine with 32 logical CPUs (HeteroCL with the cached kernel):
+
+| Grid | Combine | Points corrected | numpy (s) | HeteroCL (s) |
+|---|---|---|---|---|
+| 101 x 101 | union | 19070 | 0.176 | 0.017 |
+| 101 x 101 | intersection | 19070 | 0.175 | 0.016 |
+| 201 x 201 | union | 47174 | 0.418 | 0.060 |
+| 201 x 201 | intersection | 43550 | 0.392 | 0.062 |
+
+Both versions leave 0 points with error > 1e-6 against the direct computation in all four cases.
 
 ## 6D Quadrotor
 
@@ -181,11 +208,18 @@ It saves `results/result_decomp_6d_union.npy` and `results/result_local_6d_union
     ├── dynamics/coupled_2d.py, subdynamics/coupled_2d.py
     └── common/            (spatial_deriv, stats, combine)
 
+    hcl_impl/local_update_2d.py
+    ├── compute/direct_2d.py, compute/decomposition_2d.py, compute/config_2d.py
+    ├── dynamics/coupled_2d.py (opt_ctrl, dynamics in HeteroCL)
+    ├── hcl_impl/spatial_deriv.py, hcl_impl/kernel_cache.py
+    └── common/            (stats, params, combine)
+
     numpy_impl/local_update_3d.py
     ├── dynamics/dubins_3d.py
     └── common/            (spatial_deriv, leaking, stats, params, combine)
 
     hcl_impl/local_update_3d.py
+    ├── hcl_impl/kernel_cache.py
     ├── common/            (leaking, stats, params, combine)
     └── odp                (DubinsCar, 1st order ENO derivatives)
 

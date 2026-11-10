@@ -16,11 +16,11 @@ import plotly.express as px
 
 from odp.Grid import Grid
 from odp.Shapes import *
-from compute.config_2d import Config, construct2DGrid, Frontier
+from compute.config_2d import Config, construct2DGrid, Frontier, initConfig
 from dynamics.coupled_2d import couple_u
 from subdynamics.coupled_2d import subsys
 from common.combine import check_combine
-from common.stats import compareArrays
+from common.stats import compareArrays, printCorrectnessStatistics2d
 
 # The function of computing first order spatial derivative
 from common.spatial_deriv import spa_deriv
@@ -30,55 +30,6 @@ import time
 np.set_printoptions(threshold=py_sys.maxsize)
 np.set_printoptions(precision=5)
 
-
-def initConfig(use_union: bool, 
-               grid_size: int, 
-               generate_big_delta: int, 
-               big_delta: float,) -> Config:
-    if use_union:
-        sys_2d=couple_u(
-            x=[0, 0],
-            uMax=1,
-            dMax=0.0,
-            uMode="max",
-            dMode="min",
-        )
-        subsys_1d=subsys(
-            x=[0],
-            uMax=1,
-            dMax=0.0,
-            uMode="max",
-            dMode="min",
-        )
-    else:
-        sys_2d=couple_u(
-            x=[0, 0],
-            uMax=1,
-            dMax=0.0,
-            uMode="min",
-            dMode="min",
-        )
-        subsys_1d=subsys(
-            x=[0],
-            uMax=1,
-            dMax=0.0,
-            uMode="min",
-            dMode="min",
-        )
-
-    return Config(
-        number_of_grid_points=grid_size,
-        lookback_length=0.20,
-        time_step=0.02,
-        small_number=1e-5,
-        sys_2d=sys_2d,
-        subsys_1d=subsys_1d,
-        use_union=use_union,
-        threshold2=1e-6,
-        use_optimization1=True,
-        generate_big_delta=generate_big_delta,
-        big_delta=big_delta,
-    )
 
 def plotArray(array, show=True):
     fig = px.imshow(array)
@@ -187,57 +138,6 @@ def correctionBasedOnDirectComputation(
         print("Corrected result:")
         print(result_combine)
         compareArrays(result_combine, true_final)
-
-def printCorrectnessStatistics(
-        direct_computation_results, decomposition_results:DecompositionResult, corrected_decomposition_results:DecompositionResult, 
-        ):
-    print("Processing stats")
-    print("================================================")
-
-    """
-    Comparision with direct computation
-    """
-    # plot_overlay_set(grid, true_final, decomp_final, result_combine, po)
-    direct_computation_final = direct_computation_results[-1]
-    decomp_final = decomposition_results.combined()[-1]
-    decomp_final_correct = corrected_decomposition_results.combined()[-1]
-
-    print(f"The total number of points: {direct_computation_final.shape[0] * direct_computation_final.shape[1]}")
-    print(
-        f"Original number of points with different values: {np.argwhere(abs(decomp_final - direct_computation_final) > 1e-6).shape}"
-    )
-    print(
-        f"Decomposition method: Number of points with different values (1e-6): {np.argwhere(abs(decomp_final - direct_computation_final) > 1e-6).shape}"
-    )
-    print(
-        f"After local update, Number of points with different values (1e-6): {np.argwhere(abs(decomp_final_correct - direct_computation_final) > 1e-6).shape}"
-    )
-
-    total_num_of_points = direct_computation_final.shape[0] * direct_computation_final.shape[1]
-    diff_decomp = np.sum(abs(decomp_final - direct_computation_final)) / total_num_of_points
-    diff_corrected = np.sum(abs(decomp_final_correct - direct_computation_final)) / total_num_of_points
-    print(
-        f"The average absolute error between direct computation and decomposition: {diff_decomp:0.10f}"
-    )
-    print(
-        f"The average absolute error between direct computation and local updates: {diff_corrected:0.10f}"
-    )
-
-    diff_decomp_max = np.max(abs(decomp_final - direct_computation_final))
-    diff_corrected_max = np.max(abs(decomp_final_correct - direct_computation_final))
-    print(
-        f"The maximum absolute error between direct computation and decomposition: {diff_decomp_max:0.10f}"
-    )
-    print(
-        f"The maximum absolute error between direct computation and local updates: {diff_corrected_max:0.10f}"
-    )
-
-    print("Number of values with error b/w direct computation and decomposition:")
-    compareArrays(array1=direct_computation_final,
-                  array2=decomp_final)
-    print("Number of values with error b/w direct computation and local update:")
-    compareArrays(array1=direct_computation_final,
-                  array2=decomp_final_correct)
 
 class IterStats:
     def __init__(self, iteration,
@@ -662,7 +562,7 @@ def main():
     print(f"Total points corrected: {local_update._perf_stats.totalPointsCorrected()}")
 
     print("")
-    printCorrectnessStatistics(
+    printCorrectnessStatistics2d(
         direct_computation_results=result_true,
         decomposition_results=decomposition_result_copy,
         corrected_decomposition_results=decomposition_result,
