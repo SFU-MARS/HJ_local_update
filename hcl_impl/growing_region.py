@@ -1,6 +1,7 @@
 # Growing-region local update in a parallel HeteroCL kernel, for any number of dimensions (used by every
 # hcl_impl/local_update_<dim>.py). Same update as numpy_impl/growing_region.py, in 32-bit floats like HJSolver
 # (common/hj_update.py).
+import ctypes
 import inspect
 import time
 
@@ -13,12 +14,39 @@ from common.hj_update import DTYPE, DTYPE_HCL, abs_hcl, deriv_bounds_hcl, for_al
 from hcl_impl.kernel_cache import load_or_build_kernel
 
 
+def int_array(arr):
+    '''
+        HeteroCL Int (32-bit) array with the values of the numpy array arr, by a byte copy. hcl.asarray converts
+        integer arrays one element at a time in Python, which takes seconds for large grids.
+    '''
+    from heterocl.tvm._ffi.base import _LIB, check_call
+    from heterocl.tvm import ndarray as tvm_nd
+    from heterocl.types import dtype_to_str
+    arr = np.ascontiguousarray(arr, dtype=np.int32)
+    out = tvm_nd.empty(arr.shape, dtype_to_str(hcl.Int()))
+    check_call(_LIB.TVMArrayCopyFromBytes(out.handle, arr.ctypes.data_as(ctypes.c_void_p), ctypes.c_size_t(arr.nbytes)))
+    return out
+
+
+def copy_to_numpy(src, out):
+    '''
+        Copy the float HeteroCL array src into the C-contiguous numpy array out (same size and float type), the
+        same byte copy as src.asnumpy() but without allocating a new array and copying it again.
+    '''
+    from heterocl.tvm._ffi.base import _LIB, check_call
+    assert out.flags['C_CONTIGUOUS'] and out.dtype == np.dtype(src.dtype) and out.shape == tuple(src.shape)
+    check_call(_LIB.TVMArrayCopyToBytes(src.handle, out.ctypes.data_as(ctypes.c_void_p),
+                                        ctypes.c_size_t(out.nbytes)))
+
+
 def build_local_update_kernel(sys, grid, num_steps, threshold):
     '''
         Used by local_update_hcl_from_file. Returns the compiled HeteroCL kernel of one local update time step s:
             1. LocalUpdate (parallel over the first dimension), at every point:
                    region = leaking set + points (and their neighbours) where V_prev differs from the
-                            decomposition result at step s-1 by more than threshold
+                            decomposition result at step s-1 by more than threshold, read from mark_read: the
+                            points updated at step s-1 that changed marked themselves and their neighbours there
+                            (points not updated keep the decomposition result, so they cannot differ)
                    V_new = V_prev + one HJSolver step   inside the region (common/hj_update.py)
                    V_new = decomposition result at step s   outside the region
             2. Grow (only with grow = 1, grow_within_step): every updated point that differs from the decomposition
@@ -26,6 +54,8 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
                updated, repeated until no new point joins. Sequential, in the same kernel call.
         Every update reads only V_prev, so the order of the updates does not change the result: the same region
         and values as numpy_impl/growing_region.py.
+            mark_read, mark_write: region marks of this step (== s) and the next step (set to s + 1); the host
+                          swaps them after each step, so a mark is never overwritten while it is still read
             region, done: work arrays for grow = 1, set to s when a point is marked / updated at time step s,
                           so they never need to be reset
             counts: running number of points updated, per index of the first dimension (read only at the end)
@@ -44,6 +74,8 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
     step = hcl.placeholder((1,), name="step", dtype=hcl.Int())
     grow = hcl.placeholder((1,), name="grow", dtype=hcl.Int())
     t_step = hcl.placeholder((1,), name="t_step", dtype=DTYPE_HCL)
+    mark_read = hcl.placeholder(shape, name="mark_read", dtype=hcl.Int())
+    mark_write = hcl.placeholder(shape, name="mark_write", dtype=hcl.Int())
     region = hcl.placeholder(shape, name="region", dtype=hcl.Int())
     done = hcl.placeholder(shape, name="done", dtype=hcl.Int())
     # Points updated, counted per i0 (each i0 runs in one thread) so no integer mask is copied out
@@ -52,7 +84,7 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
 
     def graph_create(V_new, V_prev, V_decomp, leaking, *rest):
         x = rest[:dims]
-        step, grow, t_step, region, done, counts, sweeps = rest[dims:]
+        step, grow, t_step, mark_read, mark_write, region, done, counts, sweeps = rest[dims:]
         s = step[0]
         # Threshold as a constant of the kernel's float type
         thr = tvm.const(threshold, "float32")
@@ -81,41 +113,32 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
                         nb_idx[dim] = nb[0]
                         action(tuple(nb_idx))
 
-        def corrected(idx):
-            # True if the point idx was corrected at the previous time step
-            return abs_hcl(V_prev[tuple(idx)] - V_decomp[(s - 1,) + tuple(idx)]) > thr
-
         # Global derivative bounds of V_prev, for the dissipation like HJSolver (only if the dynamics need them)
         deriv_min = deriv_max = None
         if sys.DISSIPATION_USES_DERIV_BOUNDS:
             deriv_min, deriv_max = deriv_bounds_hcl(V_prev, grid)
 
         def update(idx):
-            # One HJSolver step at idx (the dynamics do not depend on t); with grow = 1, record it and mark
-            # the neighbours if the new value differs from the decomposition
+            # One HJSolver step at idx (the dynamics do not depend on t). If the new value differs from the
+            # decomposition (the point is corrected), the point and its neighbours join the region of the next
+            # step, and with grow = 1 the neighbours also join the region of this step
             state = tuple(x[dim][idx[dim]] for dim in range(dims))
             V_new[idx] = V_prev[idx] + value_change_hcl(V_prev, list(idx), grid, sys, state, t_step[0],
                                                         deriv_min, deriv_max)
             with hcl.if_(grow[0] == 1):
                 done[idx] = s
+            with hcl.if_(abs_hcl(V_new[idx] - V_decomp[(s,) + idx]) > thr):
+                mark_write[idx] = s + 1
 
                 def mark(nb_idx):
-                    region[nb_idx] = s
-                with hcl.if_(abs_hcl(V_new[idx] - V_decomp[(s,) + idx]) > thr):
-                    neighbours(idx, mark)
+                    mark_write[nb_idx] = s + 1
+                    with hcl.if_(grow[0] == 1):
+                        region[nb_idx] = s
+                neighbours(idx, mark)
 
         def first_sweep(idx, count):
             idx = tuple(idx)
-            in_region = hcl.scalar(0, "in_region", dtype=hcl.Int())
-            with hcl.if_(hcl.or_(leaking[idx] == 1, corrected(idx))):
-                in_region[0] = 1
-
-            def mark_if_corrected(nb_idx):
-                with hcl.if_(corrected(nb_idx)):
-                    in_region[0] = 1
-            neighbours(idx, mark_if_corrected)
-
-            with hcl.if_(in_region[0] == 1):
+            with hcl.if_(hcl.or_(leaking[idx] == 1, mark_read[idx] == s)):
                 count[0] = count[0] + 1
                 update(idx)
             with hcl.else_():
@@ -146,7 +169,7 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
                 with hcl.if_(again[0] == 1):
                     sweeps[0] = sweeps[0] + 1
 
-    s = hcl.create_schedule([V_new, V_prev, V_decomp, leaking] + xs + [step, grow, t_step, region, done, counts, sweeps],
+    s = hcl.create_schedule([V_new, V_prev, V_decomp, leaking] + xs + [step, grow, t_step, mark_read, mark_write, region, done, counts, sweeps],
                             graph_create)
     # Thread parallelize the loop over the first dimension of the first sweep
     s_U = graph_create.LocalUpdate
@@ -193,13 +216,14 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshol
     xs = [hcl.asarray(np.reshape(grid.vs[d], grid.pts_each_dim[d]).astype(DTYPE), dtype=DTYPE_HCL) for d in range(dims)]
     t_step_hcl = hcl.asarray(np.array([t_step], dtype=DTYPE), dtype=DTYPE_HCL)
     V_decomp = hcl.asarray(result_decomp, dtype=DTYPE_HCL)
-    leaking_hcl = hcl.asarray(leaking.astype(np.int32), dtype=hcl.Int())
-    region = hcl.asarray(np.zeros(shape, dtype=np.int32), dtype=hcl.Int())
-    done = hcl.asarray(np.zeros(shape, dtype=np.int32), dtype=hcl.Int())
-    counts = hcl.asarray(np.zeros(shape[0], dtype=np.int32), dtype=hcl.Int())
-    steps = [hcl.asarray(np.array([i], dtype=np.int32), dtype=hcl.Int()) for i in range(num_steps)]
-    grow = hcl.asarray(np.array([int(grow_within_step)], dtype=np.int32), dtype=hcl.Int())
-    sweeps = hcl.asarray(np.zeros(1, dtype=np.int32), dtype=hcl.Int())
+    leaking_hcl = int_array(leaking)
+    zeros = np.zeros(shape, dtype=np.int32)
+    mark_read, mark_write, region, done = (int_array(zeros) for _ in range(4))
+    del zeros
+    counts = int_array(np.zeros(shape[0]))
+    steps = [int_array([i]) for i in range(num_steps)]
+    grow = int_array([int(grow_within_step)])
+    sweeps = int_array([0])
     # Two value buffers, swapped after each time step
     V_prev = hcl.asarray(result_decomp[0], dtype=DTYPE_HCL)
     V_new = hcl.asarray(np.zeros(shape, dtype=DTYPE), dtype=DTYPE_HCL)
@@ -215,11 +239,13 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshol
     for i in range(1, num_steps):
         # Step 3a: find the update region, update the value function inside it and (grow_within_step) grow the
         # region within the step, all in one kernel call
-        kernel(V_new, V_prev, V_decomp, leaking_hcl, *xs, steps[i], grow, t_step_hcl, region, done, counts, sweeps)
+        kernel(V_new, V_prev, V_decomp, leaking_hcl, *xs, steps[i], grow, t_step_hcl, mark_read, mark_write, region, done,
+               counts, sweeps)
 
         # Step 3b: save the corrected value function of this time step, then swap the buffers
-        result_local[i] = V_new.asnumpy()
+        copy_to_numpy(V_new, result_local[i])
         V_prev, V_new = V_new, V_prev
+        mark_read, mark_write = mark_write, mark_read
 
     print(f"Total correction time: {time.time() - start:.4f} seconds")
     print(f"Total local update time (kernel build/load + input copy + correction): {time.time() - total_start:.4f} seconds")

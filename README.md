@@ -34,12 +34,12 @@ For intersection, use `--combine intersection` and `local_update_2d_intersection
 
 | Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation | Decomposition | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
-| 41² | union | 10 | 1233 / 0 / 0 | 0.023 s | 0.016 s | 0.21 s / 0.0015 s |
-| 41² | intersection | 10 | 897 / 0 / 0 | 0.024 s | 0.016 s | 0.14 s / 0.0016 s |
-| 101² | union | 10 | 4569 / 0 / 0 | 0.024 s | 0.016 s | 0.66 s / 0.0031 s |
-| 101² | intersection | 10 | 3145 / 0 / 0 | 0.024 s | 0.015 s | 0.42 s / 0.0019 s |
-| 201² | union | 10 | 10473 / 0 / 0 | 0.025 s | 0.016 s | 1.5 s / 0.0079 s |
-| 201² | intersection | 10 | 7277 / 0 / 0 | 0.025 s | 0.016 s | 0.87 s / 0.0039 s |
+| 41² | union | 10 | 1233 / 0 / 0 | 0.024 s | 0.016 s | 0.20 s / 0.0013 s |
+| 41² | intersection | 10 | 897 / 0 / 0 | 0.023 s | 0.016 s | 0.13 s / 0.0013 s |
+| 101² | union | 10 | 4569 / 0 / 0 | 0.024 s | 0.017 s | 0.67 s / 0.0025 s |
+| 101² | intersection | 10 | 3145 / 0 / 0 | 0.024 s | 0.016 s | 0.42 s / 0.0019 s |
+| 201² | union | 10 | 10473 / 0 / 0 | 0.026 s | 0.015 s | 1.5 s / 0.0071 s |
+| 201² | intersection | 10 | 7277 / 0 / 0 | 0.026 s | 0.016 s | 0.87 s / 0.0041 s |
 
 All points are within 5e-7 of the direct computation (32-bit rounding), and numpy and HeteroCL update the same points, within 2.4e-7 of each other. 2d grows the region within each step (`grow_within_step`), in the HeteroCL kernel too.
 
@@ -62,8 +62,8 @@ For intersection, use `--combine intersection` and `local_update_3d_intersection
 
 | Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation | Decomposition | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
-| 41³ | union | 25 | 55224 / 6 / 30 | 0.043 s | 0.050 s | 20.7 s / 0.0082 s |
-| 41³ | intersection | 25 | 54902 / 2 / 18 | 0.045 s | 0.051 s | 20.9 s / 0.0082 s |
+| 41³ | union | 25 | 55224 / 6 / 30 | 0.048 s | 0.050 s | 20.4 s / 0.0073 s |
+| 41³ | intersection | 25 | 54902 / 2 / 18 | 0.052 s | 0.051 s | 20.7 s / 0.0076 s |
 
 The remaining points are 32-bit rounding that builds up over the 25 time steps: every point is within 2.4e-6 of the direct computation. numpy matches HJSolver exactly after the first step, HeteroCL within one rounding step (6e-8), since its kernel adds up the same terms in a different order.
 
@@ -78,7 +78,7 @@ python -m compute.decomposition_6d --grid_size 21 --combine union
 # 2. local update
 #   option 1: numpy (small grids only, e.g. --grid_size 9)
 python -m numpy_impl.local_update_6d --params numpy_impl/params/local_update_6d_union.json
-#   option 2: parallel HeteroCL (about 20 s)
+#   option 2: parallel HeteroCL (about 25 s, mostly reading and writing the files)
 python -m hcl_impl.local_update_6d --params hcl_impl/params/local_update_6d_union.json
 ```
 
@@ -88,14 +88,14 @@ For intersection, use `--combine intersection` and `local_update_6d_intersection
 
 | Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation | Decomposition | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
-| 7⁶ | union | 10 | 72058 / 0 / 0 | 0.10 s | 0.086 s | 27.2 s / 0.023 s |
-| 7⁶ | intersection | 10 | 71538 / 0 / 0 | 0.10 s | 0.084 s | 26.5 s / 0.019 s |
-| 9⁶ | union | 10 | 279471 / 0 / 0 | 0.16 s | 0.086 s | 102 s / 0.078 s |
-| 9⁶ | intersection | 10 | 276310 / 0 / 0 | 0.16 s | 0.085 s | 100 s / 0.072 s |
-| 21⁶ | union | 10 | 26250708 / – / 0 | 11.0 s | 0.12 s | – / 5.0 s |
-| 21⁶ | intersection | 10 | 26200126 / – / 0 | 11.1 s | 0.11 s | – / 5.1 s |
+| 7⁶ | union | 10 | 72058 / 0 / 0 | 0.10 s | 0.085 s | 27.9 s / 0.010 s |
+| 7⁶ | intersection | 10 | 71538 / 0 / 0 | 0.10 s | 0.086 s | 27.1 s / 0.010 s |
+| 9⁶ | union | 10 | 279471 / 0 / 0 | 0.17 s | 0.086 s | 104 s / 0.033 s |
+| 9⁶ | intersection | 10 | 276310 / 0 / 0 | 0.15 s | 0.085 s | 101 s / 0.034 s |
+| 21⁶ | union | 10 | 26250708 / – / 0 | 10.8 s | 0.12 s | – / 1.6 s |
+| 21⁶ | intersection | 10 | 26200126 / – / 0 | 10.8 s | 0.12 s | – / 1.6 s |
 
-All points are within 1e-6 of the direct computation (32-bit rounding), and numpy and HeteroCL are within 4.8e-7 of each other. numpy is not run at 21⁶. At 21⁶ (85.8 million points) each result file is 3.8 GB, and the whole HeteroCL local update takes about 18 s, most of it loading the decomposition file.
+All points are within 1e-6 of the direct computation (32-bit rounding), and numpy and HeteroCL are within 4.8e-7 of each other. numpy is not run at 21⁶. At 21⁶ (85.8 million points) each result file is 3.8 GB. The local update recomputes 28% of the point updates of the direct computation (239 of 858 million over the 10 steps); the whole HeteroCL script takes about 25 s and 10 GB, most of it reading the decomposition file and writing the result.
 
 ## Parameter Files
 
