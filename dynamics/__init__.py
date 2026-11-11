@@ -2,10 +2,13 @@
 # Each entry: the dimension, the full system class, and the subsystem classes of its decomposition.
 #
 # A full system class has
-#   opt_ctrl_numpy(t, state, spat_deriv), dynamics_numpy(t, state, uOpt, dOpt)   for the numpy versions
-#   opt_ctrl(t, state, spat_deriv), dynamics(t, state, uOpt, dOpt)               for the HeteroCL versions
-# and, if a local update adds Lax-Friedrichs dissipation (3d),
-#   dissipation_coeffs_numpy(t, state), dissipation_coeffs(t, state)
+#   opt_ctrl, opt_dstb, dynamics                     HeteroCL methods, for HJSolver (compute/) and the HeteroCL local updates
+#   opt_ctrl_numpy, dynamics_numpy                   for the numpy local updates
+#   dissipation_coeffs_numpy, dissipation_coeffs     Lax-Friedrichs coefficients as in HJSolver, from the optimal
+#                                                    control at the global min/max derivatives (deriv_min, deriv_max)
+#   DISSIPATION_USES_DERIV_BOUNDS                    True if those coefficients depend on deriv_min/deriv_max,
+#                                                    then the local update computes them (common/hj_update.py)
+# Subsystem classes need the HeteroCL methods opt_ctrl, opt_dstb, dynamics for HJSolver.
 import inspect
 
 from common.params import json_object

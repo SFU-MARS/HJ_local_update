@@ -7,6 +7,6 @@
     "dynamics": "quadrotor_6d",
     "dynamics_params": {"uTMax": 1, "utMax": 1},
     "leaking_mode": "smallest",
-    "t_step": 0.02,
+    "t_step": 0.01,
     "cache_dir": "kernels"
 }

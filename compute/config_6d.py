@@ -42,7 +42,7 @@ def add_compute_args_6d(parser):
         the local update reads the grid size and number of time steps from the saved files.
     '''
     from common.params import add_compute_args
-    add_compute_args(parser, grid_size=21, combine="union", t_step=0.02, lookback_length=0.1, dynamics="quadrotor_6d")
+    add_compute_args(parser, grid_size=21, combine="union", t_step=0.01, lookback_length=0.1, dynamics="quadrotor_6d")
 
 
 def result_files_6d(combine, results_dir="results"):
@@ -81,7 +81,7 @@ def add_local_update_args_6d(parser):
     parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
                         help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
                         "'delta' = |V1 - V2| < delta.")
-    parser.add_argument("--t_step", help="Time step used to compute the files.", default=0.02, type=float)
+    parser.add_argument("--t_step", help="Time step used to compute the files.", default=0.01, type=float)
     add_dynamics_args(parser, default="quadrotor_6d")
 
 

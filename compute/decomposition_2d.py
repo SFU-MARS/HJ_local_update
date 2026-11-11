@@ -1,11 +1,11 @@
-from pprint import pprint
+# Decomposition of the 2d coupled control system: the 1D subsystem is solved with optimized_dp's HJSolver,
+# and V1(x), V2(y) are combined as min (union) or max (intersection).
 import numpy as np
 
 from odp.Grid import Grid
 from odp.Shapes import *
 
-from subdynamics.coupled_2d import subsys
-from common.spatial_deriv import spa_deriv
+from compute.hj_solver import solve_hj
 
 # Plot Options
 from odp.Plots import *
@@ -38,6 +38,11 @@ class DecompositionResult:
 
 
 def decomposition(config: Config, saveAllTimeStep=True, debug=False):
+    '''
+        Solve the 1D subsystem config._subsys_1d with HJSolver (accuracy "low", one step per time step) and
+        combine V1(x) and V2(y) (the same 1D result) into the 2D grid with min (union) or max (intersection).
+        Returns a DecompositionResult, time as the first axis.
+    '''
     print("decomposition")
     print("================================================")
 
@@ -48,59 +53,13 @@ def decomposition(config: Config, saveAllTimeStep=True, debug=False):
         max_val=4.0,
     )
 
-    # Initialize value function for 1D
+    # Initialize value function for 1D and solve it
     data_sub = config.value_function_1d(grid=g)
-    # Set 1D system dynamics
-    sys = config._subsys_1d
-    t_step = config._time_step
-    small_number = config._small_number
-    tau = config._tau
-
-    # temp arrays for processing
-    list_x = np.reshape(g.vs[0], g.pts_each_dim[0])
-    data_change = np.zeros(tuple(g.pts_each_dim))
-
-    # Set computation task and compute HJ PDE
-    """
-    Computation in subsystems
-    """
-    if saveAllTimeStep:
-        data_list = []
-        data_list.append(data_sub)
-        # print('The shape of data list is: ', data_list)
-
-    tNow = tau[0]
     start = time.time()
-    count = 0
-
-    for i in range(1, len(tau)):
-        t = np.array([tNow, tau[i]])
-        count += 1
-
-        # while tNow < tau[i]:
-        # Update the value function
-        for x in range(len(list_x)):
-            # Get spatial derivative
-            dV_dx_L, dV_dx_R = spa_deriv((x,), data_sub, g, 0, boundary="one_sided")
-            # Get the average gradient
-            dV_dx = (dV_dx_L + dV_dx_R) / 2
-            # Get the dynamical rates of change
-            uOpt = sys.opt_ctrl_numpy(t, [list_x[x]], dV_dx)
-            dx_dt = sys.dynamics_numpy(t, [list_x[x]], uOpt, 0)
-
-            # Updating the value function
-            data_change[x] = dx_dt * dV_dx
-
-        data_sub = data_sub + t_step * data_change
-        if saveAllTimeStep:
-            data_list.append(data_sub)
-        data_change = np.zeros(tuple(g.pts_each_dim))
-        tNow = tNow + t_step
-
-    execution_time = time.time() - start
-
-    # print(f"Total kernel time: {execution_time:.4f} seconds")
-    print(f"Decomposition time: {execution_time:.4f} seconds")
+    result_1d = solve_hj(config._subsys_1d, g, data_sub, config._tau)
+    data_list = list(np.moveaxis(result_1d, -1, 0))
+    data_sub = data_list[-1]
+    print(f"Decomposition time: {time.time() - start:.4f} seconds")
 
     """
     Combine the results from 2 subsystems
@@ -183,7 +142,10 @@ def main():
     add_compute_args_2d(parser)
     args = parser.parse_args()
     config = config_from_compute_args_2d(parser, args)
-    result = decomposition(config=config, saveAllTimeStep=True)
+    try:
+        result = decomposition(config=config, saveAllTimeStep=True)
+    except ValueError as e:  # HJSolver needed more than one step per time step
+        parser.error(str(e))
     os.makedirs(args.results_dir, exist_ok=True)
     files = result_files_2d(args.combine, args.results_dir)
     for key, data in (("decomp", result.combined()), ("sub1", result.subsystem1()), ("sub2", result.subsystem2())):

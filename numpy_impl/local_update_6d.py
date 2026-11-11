@@ -1,8 +1,7 @@
 # Local update of the 6D quadrotor decomposition result, pure numpy version.
 # Corrects the decomposition result near the leaking corners so it matches the direct computation
-# (compute/direct_6d.py). Same growing-region update as numpy_impl/local_update_3d.py, with the
-# numerical scheme of compute/direct_6d.py: average of the one-sided first order derivatives,
-# no dissipation, forward Euler.
+# (compute/direct_6d.py, HJSolver). Same growing-region update as numpy_impl/local_update_3d.py, with one
+# HJSolver step per time step at every updated point (common/hj_update.py).
 import argparse
 import os
 import time
@@ -13,33 +12,8 @@ from compute.config_6d import add_local_update_args_6d, setup_local_update_6d
 from common.combine import check_combine
 from common.leaking import dilate
 from common.params import parse_args_with_params
-from common.spatial_deriv import spa_deriv
+from common.hj_update import deriv_bounds_numpy, value_change_numpy
 from common.stats import printCorrectnessStatistics
-
-
-def recomputeValueChange(data, index, grid, sys, t, t_step, state_values):
-    '''
-        Value change of one forward Euler step at index, same arithmetic as compute/direct_6d.py.
-            index: tuple of grid indices
-            state_values: list of the grid coordinates of each dimension
-    '''
-    dims = len(index)
-    # Average of the left and right spatial derivatives (1st order)
-    grad = []
-    for dim in range(dims):
-        dV_L, dV_R = spa_deriv(index, data, grid, dim, boundary="one_sided")
-        grad.append((dV_L + dV_R)/2)
-
-    # Optimal control and dynamical rates of change
-    state = [state_values[dim][index[dim]] for dim in range(dims)]
-    uOpt = sys.opt_ctrl_numpy(t, state, grad)
-    rates = sys.dynamics_numpy(t, state, uOpt, 0)
-
-    # Same order of additions as compute/direct_6d.py
-    data_change = rates[0]*grad[0]
-    for dim in range(1, dims):
-        data_change = data_change + rates[dim]*grad[dim]
-    return data_change*t_step
 
 
 def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e-6):
@@ -73,11 +47,13 @@ def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e
         # Step 2b: update region = leaking set + corrected points and their neighbours
         region = dilate(corrected, grid) | leaking
 
-        # Step 2c: start from the decomposition result, recompute one Euler step inside the region
+        # Step 2c: start from the decomposition result, recompute one HJSolver step inside the region
+        # (with the global derivative bounds of the previous step if the dissipation needs them)
+        bounds = deriv_bounds_numpy(data, grid) if sys.DISSIPATION_USES_DERIV_BOUNDS else (None, None)
         new_data = result_decomp[..., i].astype(np.float64)
         for index in np.argwhere(region):
             index = tuple(index)
-            new_data[index] = data[index] + recomputeValueChange(data, index, grid, sys, t, t_step, state_values)
+            new_data[index] = data[index] + value_change_numpy(data, index, grid, sys, t, t_step, state_values, *bounds)
         data = new_data
 
         # Step 2d: save the corrected value function of this time step
@@ -112,7 +88,7 @@ def main():
 
     # Step 6: compare the decomposition and local update results with the direct computation (if given)
     if args.true_file is not None:
-        printCorrectnessStatistics(np.load(args.true_file), np.load(args.decomp_file), result_local)
+        printCorrectnessStatistics(np.load(args.true_file, mmap_mode='r'), np.load(args.decomp_file, mmap_mode='r'), result_local)
     else:
         print("No --true_file given, skipping the comparison with the direct computation")
 

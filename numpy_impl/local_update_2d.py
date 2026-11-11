@@ -22,7 +22,7 @@ from common.combine import check_combine
 from common.stats import compareArrays, printCorrectnessStatistics2d
 
 # The function of computing first order spatial derivative
-from common.spatial_deriv import spa_deriv
+from common.hj_update import deriv_bounds_numpy, value_change_numpy
 
 import time
 
@@ -34,109 +34,6 @@ def plotArray(array, show=True):
     fig = px.imshow(array)
     if show:
         fig.show()
-
-def correctionBasedOnDirectComputation(
-    true_final, result_decomp, config: Config, debug=False
-):
-
-    print("correctionBasedOnDirectComputation")
-    print("================================================")
-    decomp_final = result_decomp[-1]
-    result_diff = decomp_final - true_final
-
-    if debug:
-        print("true_final:")
-        print(true_final)
-        print("decomp_final:")
-        print(decomp_final)
-
-    indice = np.argwhere(abs(result_diff) > 1e-6)
-    indice_transpose = indice.transpose()
-    indices_ref = np.ravel_multi_index(indice_transpose, decomp_final.shape)
-
-    # Initialize from config
-    grid = construct2DGrid(number_of_grid_points=config._number_of_grid_points)
-    data_init = config.value_function_2d(grid=grid)
-    t_step = config._time_step
-    tau = config._tau
-    sys = config._sys_2d
-
-    data = data_init.copy()
-
-    # Plotting Option
-    po = PlotOptions(
-        do_plot=True,
-        plot_type="value",
-        plotDims=[0, 1],
-        colorscale="Bluered",
-        save_fig=True,
-        filename="local_update_3",
-        interactive_html=True,
-    )
-
-    """
-    Below is the local updating loop of the value function with respect to the indices
-    pure numpy version
-    """
-
-    list_x1 = np.reshape(grid.vs[0], grid.pts_each_dim[0])
-    list_x2 = np.reshape(grid.vs[1], grid.pts_each_dim[1])
-
-    data_change = np.zeros(tuple(grid.pts_each_dim))
-
-    tNow = tau[0]
-    print("Correcting decomposition results...")
-
-    start = time.time()
-    count = 0
-
-    for i in range(1, len(tau)):
-        t = np.array([tNow, tau[i]])
-        print(f"Time step: {count}, {t}")
-        count += 1
-
-        # while tNow < tau[i]:
-        # Update the value function
-
-        for ind in range(len(indice)):
-            # print(indices[i])
-            # get indices
-            x = indice[ind][0]
-            y = indice[ind][1]
-            # get spatial derivative
-            dV_dx_L, dV_dx_R = spa_deriv((x, y), data, grid, 0, boundary="one_sided")
-            dV_dy_L, dV_dy_R = spa_deriv((x, y), data, grid, 1, boundary="one_sided")
-            # Get the average gradient
-            dV_dx = (dV_dx_L + dV_dx_R) / 2
-            dV_dy = (dV_dy_L + dV_dy_R) / 2
-            # get the dynamical rates of change
-            uOpt = sys.opt_ctrl_numpy(t, [list_x1[x], list_x2[y]], [dV_dx, dV_dy])
-            dx_dt, dy_dt = sys.dynamics_numpy(t, [list_x1[x], list_x2[y]], uOpt, 0)
-            # Updating the value function
-            data_change[x, y] = dx_dt * dV_dx + dy_dt * dV_dy
-
-        data = data + data_change * t_step
-        tNow += t_step
-        data_change = np.zeros(tuple(grid.pts_each_dim))
-
-        data_ref = result_decomp[i].copy()
-        np.put(data_ref, indices_ref, data[indice_transpose[0], indice_transpose[1]])
-
-        data = data_ref.copy()
-
-        execution_time = time.time() - start
-    print(f"Total kernel time: {execution_time:.4f} seconds")
-
-    """
-    Combination process: local updating result, and decomposition result
-    """
-    result_combine = decomp_final.copy()
-
-    np.put(result_combine, indices_ref, data[indice_transpose[0], indice_transpose[1]])
-    if debug:
-        print("Corrected result:")
-        print(result_combine)
-        compareArrays(result_combine, true_final)
 
 class IterStats:
     def __init__(self, iteration,
@@ -231,6 +128,7 @@ class CorrectionBasedOnLocalUpdate:
 
         self._list_x1 = np.reshape(self._grid.vs[0], self._grid.pts_each_dim[0])
         self._list_x2 = np.reshape(self._grid.vs[1], self._grid.pts_each_dim[1])
+        self._deriv_min = self._deriv_max = None
 
         self._perf_stats = PerfStats(decomposition_result=decomposition_result,
                                      true_result=true_result,
@@ -238,25 +136,11 @@ class CorrectionBasedOnLocalUpdate:
                                      )
 
     def recomputeValueChange(self, data, x, y, t):
-        # recompute value at index data[x][y] using the grid at timestep t
-        # Note: t is not being used in both opt_ctrl_numpy() and dynamics_numpy().
-
-        # Get spatial derivative
-        dV_dx_L, dV_dx_R = spa_deriv((x, y), data, self._grid, 0, boundary="one_sided")
-        dV_dy_L, dV_dy_R = spa_deriv((x, y), data, self._grid, 1, boundary="one_sided")
-
-        # Get the average gradient
-        dV_dx = (dV_dx_L + dV_dx_R) / 2
-        dV_dy = (dV_dy_L + dV_dy_R) / 2
-
-        # Get the dynamical rates of change
-        uOpt = self._sys.opt_ctrl_numpy(t, [self._list_x1[x], self._list_x2[y]], [dV_dx, dV_dy])
-        dx_dt, dy_dt = self._sys.dynamics_numpy(t, [self._list_x1[x], self._list_x2[y]], uOpt, 0)
-
-        # Updating the value function
-        data_change = dx_dt * dV_dx + dy_dt * dV_dy
-        data_change = data_change*self._config._time_step
-        return data_change
+        # Value change of one HJSolver step at data[x][y] (see common/hj_update.py), from the value function
+        # data of the previous time step. self._deriv_min / _deriv_max are the global derivative bounds of
+        # data, set in doCorrection, used for the dissipation like HJSolver.
+        return value_change_numpy(data, (x, y), self._grid, self._sys, t, self._config._time_step,
+                                  (self._list_x1, self._list_x2), self._deriv_min, self._deriv_max)
     
     def updateValue(self, curr_result, prev_result, index, frontier:Frontier, visited: Frontier, time_step) -> bool:
         x = index[0]
@@ -318,6 +202,9 @@ class CorrectionBasedOnLocalUpdate:
             curr_result_lower = subsystem2_data_all_timesteps[i]
             curr_result = result_combined_all_timesteps[i]
             prev_result = result_combined_all_timesteps[i - 1]
+            # Global derivative bounds of the previous time step, for the dissipation like HJSolver
+            self._deriv_min, self._deriv_max = (deriv_bounds_numpy(np.asarray(prev_result), self._grid)
+                                                if self._sys.DISSIPATION_USES_DERIV_BOUNDS else (None, None))
             curr_result_true = self._true_result[i]
             total_indices_corrected = 0
             visited.reset()

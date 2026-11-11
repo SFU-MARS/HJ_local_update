@@ -17,8 +17,8 @@ from common.combine import check_combine
 from common.params import parse_args_with_params
 from common.stats import printCorrectnessStatistics2d
 from hcl_impl.kernel_cache import load_or_build_kernel
-from common import spatial_deriv
-from common.spatial_deriv import spa_deriv_hcl
+from common import hj_update, spatial_deriv
+from common.hj_update import deriv_bounds_hcl, value_change_hcl
 
 DTYPE = hcl.Float(64)
 
@@ -38,10 +38,12 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
             3. Every point outside the region keeps the decomposition result at step s
         Every update reads only V_prev, so the order of the updates does not change the result, and it is
         the same region and values as CorrectionBasedOnLocalUpdate.doCorrection in numpy_impl/local_update_2d.py.
-        Same scheme as the numpy version: average of the one-sided first order derivatives, no dissipation,
-        forward Euler, 64-bit floats.
-            identified (output): 1 for every leaking corner found in step 1
-            done (output): 1 for every point updated at this time step
+        Same scheme as the numpy version and HJSolver (common/hj_update.py): 1st order ENO derivatives,
+        Lax-Friedrichs dissipation with the global derivative bounds of V_prev (stage "Bounds") if the dynamics
+        need them, forward Euler, 64-bit floats.
+            in_region, done: work buffers (region, and points updated at this time step)
+            counts (output): [number of leaking corners found in step 1, number of points updated], counted
+                             in the kernel so the integer masks never need to be copied out (slow in HeteroCL)
     '''
     shape = tuple(int(n) for n in grid.pts_each_dim)
     nx, ny = shape
@@ -56,16 +58,18 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
     t_step = hcl.placeholder((1,), name="t_step", dtype=DTYPE)
     big_delta = hcl.placeholder((1,), name="big_delta", dtype=DTYPE)
     in_region = hcl.placeholder(shape, name="in_region", dtype=hcl.Int())
-    identified = hcl.placeholder(shape, name="identified", dtype=hcl.Int())
     done = hcl.placeholder(shape, name="done", dtype=hcl.Int())
+    counts = hcl.placeholder((2,), name="counts", dtype=hcl.Int())
 
-    def graph_create(V_new, V_prev, V_decomp, V_1, V_2, x1, x2, step, t_step, big_delta, in_region, identified, done):
+    def graph_create(V_new, V_prev, V_decomp, V_1, V_2, x1, x2, step, t_step, big_delta, in_region, done, counts):
         s = step[0]
         # A plain Python float in a kernel becomes a 32-bit constant, so build it as a 64-bit one
         thr = tvm.const(threshold, "float64")
 
         # Step 1: start from the decomposition result, the region is the leaking corners
         with hcl.Stage("Identify"):
+            counts[0] = 0
+            counts[1] = 0
             with hcl.for_(0, nx, name="i") as i:
                 with hcl.for_(0, ny, name="j") as j:
                     V_new[i, j] = V_decomp[s, i, j]
@@ -73,7 +77,12 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
                     in_region[i, j] = 0
                     with hcl.if_(abs_same_type(V_1[s, i, j] - V_2[s, i, j]) < big_delta[0]):
                         in_region[i, j] = 1
-                    identified[i, j] = in_region[i, j]
+                        counts[0] = counts[0] + 1
+
+        # Global derivative bounds of V_prev, for the dissipation like HJSolver
+        deriv_min = deriv_max = None
+        if sys.DISSIPATION_USES_DERIV_BOUNDS:
+            deriv_min, deriv_max = deriv_bounds_hcl(V_prev, grid)
 
         # Step 2: update the region and grow it until no new point joins
         with hcl.Stage("Grow"):
@@ -83,21 +92,11 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
                 with hcl.for_(0, nx, name="i") as i:
                     with hcl.for_(0, ny, name="j") as j:
                         with hcl.if_(hcl.and_(in_region[i, j] == 1, done[i, j] == 0)):
-                            dV_dx_L, dV_dx_R = spa_deriv_hcl([i, j], V_prev, grid, 0, boundary="one_sided")
-                            dV_dy_L, dV_dy_R = spa_deriv_hcl([i, j], V_prev, grid, 1, boundary="one_sided")
-                            dV_dx = hcl.scalar(0, "dV_dx")
-                            dV_dy = hcl.scalar(0, "dV_dy")
-                            dV_dx[0] = (dV_dx_L + dV_dx_R) / 2
-                            dV_dy[0] = (dV_dy_L + dV_dy_R) / 2
-
-                            # Optimal control and dynamical rates of change (the dynamics do not depend on t)
-                            state = (x1[i], x2[j])
-                            uOpt = sys.opt_ctrl(0, state, (dV_dx[0], dV_dy[0]))
-                            dx_dt, dy_dt = sys.dynamics(0, state, uOpt, (0, 0))
-
-                            # Forward Euler step
-                            V_new[i, j] = V_prev[i, j] + (dx_dt * dV_dx[0] + dy_dt * dV_dy[0]) * t_step[0]
+                            # One HJSolver step (the dynamics do not depend on t)
+                            V_new[i, j] = V_prev[i, j] + value_change_hcl(V_prev, [i, j], grid, sys, (x1[i], x2[j]),
+                                                                           t_step[0], deriv_min, deriv_max)
                             done[i, j] = 1
+                            counts[1] = counts[1] + 1
                             again[0] = 1
 
                             # A point that changed spreads the region to its neighbours, wrapping around
@@ -120,7 +119,7 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
                                 with hcl.else_():
                                     in_region[i, j + 1] = 1
 
-    s = hcl.create_schedule([V_new, V_prev, V_decomp, V_1, V_2, x1, x2, step, t_step, big_delta, in_region, identified, done],
+    s = hcl.create_schedule([V_new, V_prev, V_decomp, V_1, V_2, x1, x2, step, t_step, big_delta, in_region, done, counts],
                             graph_create)
     return hcl.build(s)
 
@@ -164,7 +163,7 @@ def local_update_hcl(decomposition_result: DecompositionResult, config, cache_di
     total_start = time.time()
     key = (tuple(grid.pts_each_dim), tuple(grid.min), tuple(grid.max), tuple(grid.pDim), num_steps, threshold,
            type(sys).__name__, sorted(vars(sys).items()), inspect.getsource(type(sys)),
-           inspect.getsource(build_local_update_kernel), inspect.getsource(spatial_deriv))
+           inspect.getsource(build_local_update_kernel), inspect.getsource(spatial_deriv), inspect.getsource(hj_update))
     kernel, how = load_or_build_kernel(lambda: build_local_update_kernel(sys, grid, num_steps, threshold),
                                        key, "local_update_2d", cache_dir)
     print(f"HeteroCL kernel {how} in {time.time() - total_start:.4f} seconds")
@@ -178,8 +177,8 @@ def local_update_hcl(decomposition_result: DecompositionResult, config, cache_di
     steps = [hcl.asarray(np.array([i], dtype=np.int32), dtype=hcl.Int()) for i in range(num_steps)]
     shape = result_decomp.shape[1:]
     in_region = hcl.asarray(np.zeros(shape, dtype=np.int32), dtype=hcl.Int())
-    identified = hcl.asarray(np.zeros(shape, dtype=np.int32), dtype=hcl.Int())
     done = hcl.asarray(np.zeros(shape, dtype=np.int32), dtype=hcl.Int())
+    counts = hcl.asarray(np.zeros(2, dtype=np.int32), dtype=hcl.Int())
     # Two value buffers, swapped after each time step
     V_prev = hcl.asarray(result_decomp[0], dtype=DTYPE)
     V_new = hcl.asarray(np.zeros(shape, dtype=np.float64), dtype=DTYPE)
@@ -199,14 +198,13 @@ def local_update_hcl(decomposition_result: DecompositionResult, config, cache_di
         big_delta = hcl.asarray(np.array([big_delta_value], dtype=np.float64), dtype=DTYPE)
 
         # Step 3b: identify, update and grow the region, all in the kernel
-        kernel(V_new, V_prev, V_decomp, V_1, V_2, x1, x2, steps[i], t_step, big_delta, in_region, identified, done)
+        kernel(V_new, V_prev, V_decomp, V_1, V_2, x1, x2, steps[i], t_step, big_delta, in_region, done, counts)
 
         # Step 3c: save the corrected value function of this time step, then swap the buffers
         result_local[i] = V_new.asnumpy()
         V_prev, V_new = V_new, V_prev
 
-        num_identified = int(identified.asnumpy().sum())
-        num_corrected = int(done.asnumpy().sum())
+        num_identified, num_corrected = (int(c) for c in counts.asnumpy())
         total_identified += num_identified
         total_corrected += num_corrected
         if debug:

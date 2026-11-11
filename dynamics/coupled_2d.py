@@ -3,6 +3,9 @@ import numpy as np
 import math
 
 class couple_u:
+    # The optimal control, and so the dissipation coefficients, depend on the global derivative bounds
+    DISSIPATION_USES_DERIV_BOUNDS = True
+
     def __init__(self, x=[0,0], uMax=1, dMax=0.0, uMode='min', dMode='max'):
         '''
             System dynamics: with coupled control
@@ -126,10 +129,27 @@ class couple_u:
         y_dot = uOpt[1]
         
         return (x_dot, y_dot)
-        
-    
-    
 
-    
-                
-            
+    def dissipation_coeffs_numpy(self, t, state, deriv_min, deriv_max):
+        '''
+        Lax-Friedrichs dissipation coefficients as in optimized_dp's HJSolver: the largest |rate of change|
+        of each state over the optimal controls at the global min and max spatial derivatives
+        '''
+        rates_L = self.dynamics_numpy(t, state, self.opt_ctrl_numpy(t, state, deriv_min), 0)
+        rates_U = self.dynamics_numpy(t, state, self.opt_ctrl_numpy(t, state, deriv_max), 0)
+        return [max(abs(a), abs(b)) for a, b in zip(rates_L, rates_U)]
+
+    def dissipation_coeffs(self, t, state, deriv_min, deriv_max):
+        '''
+        HeteroCL version of dissipation_coeffs_numpy (keeps the float type of the inputs)
+        '''
+        rates_L = self.dynamics(t, state, self.opt_ctrl(t, state, deriv_min), (0, 0))
+        rates_U = self.dynamics(t, state, self.opt_ctrl(t, state, deriv_max), (0, 0))
+        alpha = []
+        for d, (a, b) in enumerate(zip(rates_L, rates_U)):
+            abs_a = hcl.select(a > 0, a, -a)
+            abs_b = hcl.select(b > 0, b, -b)
+            alpha_d = hcl.scalar(0, f"alpha{d}")
+            alpha_d[0] = hcl.select(abs_a > abs_b, abs_a, abs_b)
+            alpha.append(alpha_d[0])
+        return tuple(alpha)

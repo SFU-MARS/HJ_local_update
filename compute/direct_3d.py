@@ -6,6 +6,8 @@ import math
 from odp.Grid import Grid
 from odp.Shapes import *
 from odp.solver import HJSolver
+
+from compute.hj_solver import solve_hj
 from odp.dynamics import DubinsCar
 
 from odp.Plots import PlotOptions
@@ -58,12 +60,11 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
 
     start = time.time()
 
-    result = HJSolver(sys, g, data, tau, compMethods,
-                      saveAllTimeSteps=saveAllTimeStep, accuracy=accuracy)
-
     if saveAllTimeStep:
-        # HJSolver stores the initial value at index -1, flip so that index 0 is t = 0
-        result = np.flip(result, axis=-1)
+        # Index 0 is t = 0, and one HJSolver step per time step (checked)
+        result = solve_hj(sys, g, data, tau, accuracy=accuracy)
+    else:
+        result = HJSolver(sys, g, data, tau, compMethods, saveAllTimeSteps=False, accuracy=accuracy)
 
     execution_time = time.time() - start
 
@@ -101,9 +102,12 @@ def main():
     except (ValueError, TypeError) as e:
         parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
     print(f"Dynamics: {args.dynamics} {vars(sys)}")
-    direct_comp(args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length, t_step=args.t_step,
-         accuracy=args.accuracy, plot=args.plot, combine=args.combine, v=sys.v, wMax=sys.wMax,
-         results_dir=args.results_dir)
+    try:
+        direct_comp(args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length, t_step=args.t_step,
+             accuracy=args.accuracy, plot=args.plot, combine=args.combine, v=sys.v, wMax=sys.wMax,
+             results_dir=args.results_dir)
+    except ValueError as e:  # HJSolver needed more than one step per time step
+        parser.error(str(e))
 
 
 if __name__ == "__main__":

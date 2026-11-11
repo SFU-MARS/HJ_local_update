@@ -1,118 +1,28 @@
-import numpy as np
-
-from odp.Grid import Grid
-from odp.Shapes import *
-
-from dynamics.coupled_2d import couple_u
-from common.spatial_deriv import spa_deriv
-
-# Plot Options
-from odp.Plots import *
-
-# Solver Core
-from odp.solver import HJSolver
-
-import time
+# Direct computation of the 2d coupled control system with optimized_dp's HJSolver, used as the ground truth.
 import argparse
 import os
+import time
+
+import numpy as np
 
 from compute.config_2d import Config, construct2DGrid, add_compute_args_2d, config_from_compute_args_2d, result_files_2d
+from compute.hj_solver import solve_hj
 
 
-def direct_computation(config: Config, saveAllTimeStep, debug=False):
+def direct_computation(config: Config, saveAllTimeStep=True, debug=False):
+    '''
+        Solve the full 2D system config._sys_2d with HJSolver (accuracy "low", one step per time step).
+        Returns (grid, value function with time as the first axis).
+    '''
     print("direct_computation")
     print("================================================")
-
-    ## Get initial values from config
-    print(f"use_union: {config._use_union}")
-    num = config._number_of_grid_points
-    t_step = config._time_step
-    small_number = config._small_number
-    tau = config._tau
-    sys = config._sys_2d
-
-    # create grid
-    g = construct2DGrid(number_of_grid_points=num)
-
-    # initialize value function
-    # data = ShapeRectangle(g, [-1.0, -1.0], [1.0, 1.0])
+    g = construct2DGrid(number_of_grid_points=config._number_of_grid_points)
     data = config.value_function_2d(grid=g)
-    if debug:
-        print("grid:")
-        print(g.vs)
-        print("data_sub:")
-        print(data)
-        print(f"saveAllTimeStep: {saveAllTimeStep}")
-
-    """
-    Direct updating loop
-    """
-
-    if saveAllTimeStep:
-        data_list = []
-        data_list.append(data)
-
-    list_x1 = np.reshape(g.vs[0], g.pts_each_dim[0])
-    list_x2 = np.reshape(g.vs[1], g.pts_each_dim[1])
-
-    data_change = np.zeros(tuple(g.pts_each_dim))
-    tNow = tau[0]
     start = time.time()
-    count = 0
-
-    for i in range(1, len(tau)):
-        t = np.array([tNow, tau[i]])
-        count += 1
-
-        # while tNow < tau[i]:
-        # Update the value function
-
-        for x in range(len(list_x1)):
-            for y in range(len(list_x2)):
-
-                # Get spatial derivative
-                dV_dx_L, dV_dx_R = spa_deriv((x, y), data, g, 0, boundary="one_sided")
-                dV_dy_L, dV_dy_R = spa_deriv((x, y), data, g, 1, boundary="one_sided")
-
-                # Get the average gradient
-                dV_dx = (dV_dx_L + dV_dx_R) / 2
-                dV_dy = (dV_dy_L + dV_dy_R) / 2
-
-                # Get the dynamical rates of change
-                uOpt = sys.opt_ctrl_numpy(t, [list_x1[x], list_x2[y]], [dV_dx, dV_dy])
-                dx_dt, dy_dt = sys.dynamics_numpy(t, [list_x1[x], list_x2[y]], uOpt, 0)
-
-                # Updating the value function
-                data_change[x, y] = dx_dt * dV_dx + dy_dt * dV_dy
-
-        data = data + data_change * t_step
-        if saveAllTimeStep:
-            data_list.append(data)
-        data_change = np.zeros(tuple(g.pts_each_dim))
-        tNow += t_step
-        # print('The shape of data list is: ', len(data_list))
-    execution_time = time.time() - start
-
-    # print('The shape of data list is: ', data_list.shape)
-
-    print(f"Number of timesteps: {len(data_list)}")
-    print(f"Direct computation time: {execution_time:.4f} seconds")
-
-    if debug:
-        print(f"grid: {g.vs}")
-        print(f"data_sub: {data}")
-        print(f"len(data_list): {len(data_list)}")
-
-    # print("Writing to file")    
-    # f = open("output.txt", "w")
-    # for line in data:
-    #     f.write(f"{line}")
-    # f.close()
-
-    if saveAllTimeStep:
-        return g, data_list
-
-    return g, data
+    result = solve_hj(config._sys_2d, g, data, config._tau)
+    print(f"Number of timesteps: {result.shape[-1]}")
+    print(f"Direct computation time: {time.time() - start:.4f} seconds")
+    return g, np.moveaxis(result, -1, 0)
 
 
 def main():
@@ -123,7 +33,10 @@ def main():
     add_compute_args_2d(parser)
     args = parser.parse_args()
     config = config_from_compute_args_2d(parser, args)
-    _, data_list = direct_computation(config=config, saveAllTimeStep=True)
+    try:
+        _, data_list = direct_computation(config=config, saveAllTimeStep=True)
+    except ValueError as e:  # HJSolver needed more than one step per time step
+        parser.error(str(e))
     os.makedirs(args.results_dir, exist_ok=True)
     path = result_files_2d(args.combine, args.results_dir)["direct"]
     np.save(path, np.moveaxis(np.asarray(data_list), 0, -1))

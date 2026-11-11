@@ -9,6 +9,8 @@ from odp.Grid import Grid
 from odp.Shapes import *
 from odp.solver import HJSolver
 
+from compute.hj_solver import solve_hj
+
 from odp.Plots import PlotOptions
 from odp.Plots import visualize_plots
 
@@ -73,14 +75,20 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     '''
     Computation in subsystem 1
     '''
-    result_1 = HJSolver(sys_1, g_1, data_sub_1, tau, compMethods,
-                        saveAllTimeSteps=saveAllTimeStep, accuracy=accuracy)
+    if saveAllTimeStep:
+        # Index 0 is t = 0, and one HJSolver step per time step (checked)
+        result_1 = solve_hj(sys_1, g_1, data_sub_1, tau, accuracy=accuracy)
+    else:
+        result_1 = HJSolver(sys_1, g_1, data_sub_1, tau, compMethods, saveAllTimeSteps=False, accuracy=accuracy)
 
     '''
     Computation in subsystem 2
     '''
-    result_2 = HJSolver(sys_2, g_2, data_sub_2, tau, compMethods,
-                        saveAllTimeSteps=saveAllTimeStep, accuracy=accuracy)
+    if saveAllTimeStep:
+        # Index 0 is t = 0, and one HJSolver step per time step (checked)
+        result_2 = solve_hj(sys_2, g_2, data_sub_2, tau, accuracy=accuracy)
+    else:
+        result_2 = HJSolver(sys_2, g_2, data_sub_2, tau, compMethods, saveAllTimeSteps=False, accuracy=accuracy)
 
     '''
     Combine the results from 2 subsystems
@@ -96,9 +104,9 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
         result_upper = result_1[:, np.newaxis, :]
         result_lower = result_2[np.newaxis, :, :]
     else:
-        # HJSolver stores the initial value at index -1, flip so that index 0 is t = 0
-        data_list_1 = np.flip(result_1, axis=-1)
-        data_list_2 = np.flip(result_2, axis=-1)
+        # solve_hj already put t = 0 at index 0
+        data_list_1 = result_1
+        data_list_2 = result_2
 
         # (x, theta, t), (y, theta, t) -> (x, y, theta, t)
         result_upper = data_list_1[:, np.newaxis, :, :]
@@ -144,9 +152,12 @@ def main():
     except (ValueError, TypeError) as e:
         parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
     print(f"Dynamics: {args.dynamics} {vars(sys)}")
-    decomposition(args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length, t_step=args.t_step,
-         accuracy=args.accuracy, plot=args.plot, combine=args.combine, v=sys.v, wMax=sys.wMax,
-         results_dir=args.results_dir)
+    try:
+        decomposition(args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length, t_step=args.t_step,
+             accuracy=args.accuracy, plot=args.plot, combine=args.combine, v=sys.v, wMax=sys.wMax,
+             results_dir=args.results_dir)
+    except ValueError as e:  # HJSolver needed more than one step per time step
+        parser.error(str(e))
 
 
 if __name__ == "__main__":

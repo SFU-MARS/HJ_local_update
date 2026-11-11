@@ -1,22 +1,18 @@
-# First order spatial derivatives (left and right) for a grid of any dimension.
-#   spa_deriv:     numpy version
-#   spa_deriv_hcl: same rules inside a HeteroCL kernel
+# First order spatial derivatives (left and right) for a grid of any dimension, same as optimized_dp's
+# 1st order ENO scheme (HJSolver accuracy "low"): periodic dimensions (grid.pDim) wrap around, other
+# dimensions extrapolate a ghost point at the grid edge.
+#   spa_deriv:        numpy, one grid point
+#   spa_deriv_arrays: numpy, every grid point at once (same arithmetic)
+#   spa_deriv_hcl:    inside a HeteroCL kernel, keeping the float type of V
 import heterocl as hcl
 from heterocl import tvm
 import numpy as np
 
 
-def spa_deriv(index, data, grid, dim, boundary):
+def spa_deriv(index, data, grid, dim):
     '''
-        First order left and right spatial derivative of data at index along dimension dim.
+        Left and right spatial derivative of data at index along dimension dim.
             index: tuple of grid indices, one per dimension of data
-            dim: dimension to differentiate along
-            boundary: what to do at the edge of a non-periodic dimension
-                "extrapolate": extrapolate a ghost point outside the grid, same as the first order
-                    ENO scheme in optimized_dp (used by the 3d case)
-                "one_sided": use the one-sided difference for both the left and the right
-                    derivative (used by the 2d and 6d cases)
-        Periodic dimensions (grid.pDim) wrap around.
         Returns (left_deriv, right_deriv).
     '''
     index = tuple(index)
@@ -33,22 +29,12 @@ def spa_deriv(index, data, grid, dim, boundary):
         right_deriv = (value_at((i+1) % n) - value_at(i))/dx
     elif i == 0:
         right_deriv = (value_at(i+1) - value_at(i))/dx
-        if boundary == "extrapolate":
-            left_boundary = value_at(i) + abs(value_at(i+1) - value_at(i))*np.sign(value_at(i))
-            left_deriv = (value_at(i) - left_boundary)/dx
-        elif boundary == "one_sided":
-            left_deriv = right_deriv
-        else:
-            raise ValueError(f"unknown boundary: {boundary}")
+        left_boundary = value_at(i) + abs(value_at(i+1) - value_at(i))*np.sign(value_at(i))
+        left_deriv = (value_at(i) - left_boundary)/dx
     elif i == n-1:
         left_deriv = (value_at(i) - value_at(i-1))/dx
-        if boundary == "extrapolate":
-            right_boundary = value_at(i) + abs(value_at(i) - value_at(i-1))*np.sign(value_at(i))
-            right_deriv = (right_boundary - value_at(i))/dx
-        elif boundary == "one_sided":
-            right_deriv = left_deriv
-        else:
-            raise ValueError(f"unknown boundary: {boundary}")
+        right_boundary = value_at(i) + abs(value_at(i) - value_at(i-1))*np.sign(value_at(i))
+        right_deriv = (right_boundary - value_at(i))/dx
     else:
         left_deriv = (value_at(i) - value_at(i-1))/dx
         right_deriv = (value_at(i+1) - value_at(i))/dx
@@ -56,17 +42,44 @@ def spa_deriv(index, data, grid, dim, boundary):
     return left_deriv, right_deriv
 
 
-def spa_deriv_hcl(index, V, grid, dim, boundary):
+def spa_deriv_arrays(data, grid, dim):
     '''
-        Same as spa_deriv, inside a HeteroCL kernel.
+        spa_deriv at every grid point at once, same arithmetic.
+        Returns (left_deriv, right_deriv) arrays with the shape of data.
+    '''
+    n = data.shape[dim]
+    dx = grid.dx[dim]
+
+    def sl(s):
+        idx = [slice(None)] * data.ndim
+        idx[dim] = s
+        return tuple(idx)
+
+    left = np.empty_like(data)
+    right = np.empty_like(data)
+    diff = (data[sl(slice(1, None))] - data[sl(slice(None, -1))])/dx
+    left[sl(slice(1, None))] = diff
+    right[sl(slice(None, -1))] = diff
+    v0, v1 = data[sl(slice(0, 1))], data[sl(slice(1, 2))]
+    vl, vl1 = data[sl(slice(n - 1, n))], data[sl(slice(n - 2, n - 1))]
+    if dim in grid.pDim:
+        left[sl(slice(0, 1))] = (v0 - vl)/dx
+        right[sl(slice(n - 1, n))] = (v0 - vl)/dx
+    else:
+        left_boundary = v0 + abs(v1 - v0)*np.sign(v0)
+        left[sl(slice(0, 1))] = (v0 - left_boundary)/dx
+        right_boundary = vl + abs(vl - vl1)*np.sign(vl)
+        right[sl(slice(n - 1, n))] = (right_boundary - vl)/dx
+    return left, right
+
+
+def spa_deriv_hcl(index, V, grid, dim):
+    '''
+        spa_deriv inside a HeteroCL kernel, keeping the float type of V.
             index: list of loop variables, one per dimension of V
             V: HeteroCL tensor with the grid shape
-            boundary: only "one_sided" is implemented here (the 3d HeteroCL kernel uses the
-                first order ENO derivatives of optimized_dp, which extrapolate)
         Returns (left_deriv, right_deriv) as HeteroCL expressions.
     '''
-    if boundary != "one_sided":
-        raise NotImplementedError(f"boundary={boundary!r} is not implemented in spa_deriv_hcl, only 'one_sided'")
     i = index[dim]
     n = int(grid.pts_each_dim[dim])
     # A plain Python float in a kernel becomes a 32-bit constant, so build dx with the type of V
@@ -76,6 +89,12 @@ def spa_deriv_hcl(index, V, grid, dim, boundary):
         idx = list(index)
         idx[dim] = k
         return V[tuple(idx)]
+
+    def abs_(x):
+        return hcl.select(x > 0, x, -x)
+
+    def sign_(x):
+        return hcl.select(x > 0, tvm.const(1.0, V.dtype), hcl.select(x < 0, tvm.const(-1.0, V.dtype), tvm.const(0.0, V.dtype)))
 
     left_deriv = hcl.scalar(0, f"deriv_L{dim}")
     right_deriv = hcl.scalar(0, f"deriv_R{dim}")
@@ -92,10 +111,14 @@ def spa_deriv_hcl(index, V, grid, dim, boundary):
     else:
         with hcl.if_(i == 0):
             right_deriv[0] = (value_at(i + 1) - value_at(i)) / dx
-            left_deriv[0] = right_deriv[0]
+            left_boundary = hcl.scalar(0, f"left_boundary{dim}")
+            left_boundary[0] = value_at(i) + abs_(value_at(i + 1) - value_at(i)) * sign_(value_at(i))
+            left_deriv[0] = (value_at(i) - left_boundary[0]) / dx
         with hcl.elif_(i == n - 1):
             left_deriv[0] = (value_at(i) - value_at(i - 1)) / dx
-            right_deriv[0] = left_deriv[0]
+            right_boundary = hcl.scalar(0, f"right_boundary{dim}")
+            right_boundary[0] = value_at(i) + abs_(value_at(i) - value_at(i - 1)) * sign_(value_at(i))
+            right_deriv[0] = (right_boundary[0] - value_at(i)) / dx
         with hcl.else_():
             left_deriv[0] = (value_at(i) - value_at(i - 1)) / dx
             right_deriv[0] = (value_at(i + 1) - value_at(i)) / dx

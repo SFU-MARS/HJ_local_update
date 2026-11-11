@@ -7,6 +7,9 @@ import math
 from odp.computeGraphs.CustomGraphFunctions import my_abs, my_max
 
 class dubins_car:
+    # The dissipation coefficients do not depend on the derivative bounds (|w| = wMax either way)
+    DISSIPATION_USES_DERIV_BOUNDS = False
+
     def __init__(self, x=[0,0,0], v=1, wMax=1, dMax=0.0, uMode='min', dMode='max'):
         '''
             System dynamics:
@@ -56,7 +59,7 @@ class dubins_car:
 
         return (x_dot, y_dot, theta_dot)
 
-    def dissipation_coeffs_numpy(self, t, state):
+    def dissipation_coeffs_numpy(self, t, state, deriv_min=None, deriv_max=None):
         '''
         Lax-Friedrichs dissipation coefficients: the max |rate of change| of each state over the
         control set |w| <= wMax, same as optimized_dp
@@ -95,7 +98,7 @@ class dubins_car:
 
         return (x_dot[0], y_dot[0], theta_dot[0])
 
-    def dissipation_coeffs(self, t, state):
+    def dissipation_coeffs(self, t, state, deriv_min=None, deriv_max=None):
         '''
         HeteroCL version of dissipation_coeffs_numpy
         '''

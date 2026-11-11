@@ -28,9 +28,9 @@ def recomputeValueChange(data, x, y, z, grid, sys, t, t_step):
     # recompute value change at index data[x, y, z] using the value function data
 
     # Get the left and right spatial derivatives (1st order)
-    dV_dx_L, dV_dx_R = spa_deriv((x, y, z), data, grid, 0, boundary="extrapolate")
-    dV_dy_L, dV_dy_R = spa_deriv((x, y, z), data, grid, 1, boundary="extrapolate")
-    dV_dT_L, dV_dT_R = spa_deriv((x, y, z), data, grid, 2, boundary="extrapolate")
+    dV_dx_L, dV_dx_R = spa_deriv((x, y, z), data, grid, 0)
+    dV_dy_L, dV_dy_R = spa_deriv((x, y, z), data, grid, 1)
+    dV_dT_L, dV_dT_R = spa_deriv((x, y, z), data, grid, 2)
 
     # Get the average gradient
     dV_dx = (dV_dx_L + dV_dx_R) / 2
