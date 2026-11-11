@@ -257,14 +257,48 @@ Both versions leave 0 points with error > 1e-6 against the direct computation in
 
 ## 6D Quadrotor
 
-The local update runs the decomposition itself, finds the leaking set with `new_theory_L` (`common/leaking.py`) and corrects it. The grid size (`num = 21`) and look-back length (`lookback_length = 0.1`) are set at the top of `numpy_impl/local_update_6d.py`.
+State (x, y, vx, vy, θ, w), split into subsystem 1 (x, vx, θ, w) and subsystem 2 (y, vy, θ, w), which share θ, w and the controls. Union only: the obstacle is the union of the half spaces x ≤ 0 and y ≤ 0, V = min(V1, V2), the control avoids it (uMode `max`). The grid is x, y ∈ [−1, 4], the other dimensions ∈ [−2, 2], no periodic dimension ([compute/config_6d.py](compute/config_6d.py)).
+
+First generate the direct and decomposition results, with the same arguments for both:
 
 ```bash
-python -m numpy_impl.local_update_6d
-python -m numpy_impl.local_update_6d --dynamics quadrotor_6d --dynamics_params '{"uTMax": 1, "utMax": 1}'
+python -m compute.direct_6d --grid_size 9
+python -m compute.decomposition_6d --grid_size 9
 ```
 
-It saves `results/result_decomp_6d_union.npy` and `results/result_local_6d_union.npy`. The direct computation (`compute/direct_6d.py`) is not run, so there is no comparison.
+| Argument | Default | Description |
+|---|---|---|
+| `--grid_size` | `21` | Grid points per dimension |
+| `--combine` | `union` | Only `union` is implemented for 6d |
+| `--dynamics`, `--dynamics_params` | `quadrotor_6d`, `{}` | Dynamics, see [Dynamics](#dynamics). The decomposition builds the subsystems from them |
+| `--t_step` | `0.02` | Time step |
+| `--lookback_length` | `0.1` | Look-back length, `lookback_length / t_step` time steps |
+| `--results_dir` | `results` | Where the files are saved |
+
+This saves to `results/`:
+
+- `result_direct_6d_union.npy`: direct computation (ground truth), shape (x, y, vx, vy, θ, w, t)
+- `result_decomp_6d_union.npy`: decomposition V = min(V1, V2), same shape
+- `init_1_6d.npy`, `init_2_6d.npy`: V1 and V2 at t = 0 on the 6D grid, used for the leaking set
+
+The direct computation is a pure Python loop over every grid point: about 6 s for 7⁶ and 30 s for 9⁶ (5 time steps), but hours for 21⁶. The local update runs without it (`"true_file": null`), it is only needed for the comparison.
+
+Then run the local update:
+
+```bash
+python -m numpy_impl.local_update_6d --params numpy_impl/params/local_update_6d_union.json
+```
+
+It uses the same growing-region update and leaking set options (`--leaking_mode smallest` or `delta`) as the 3d case, with the numerical scheme of `compute/direct_6d.py` (average of the one-sided first order derivatives, no dissipation). The result is saved to `results/result_local_6d_union.npy`. The arguments are the same as for 3d, see [the 3d table](#parameter-files), with `--t_step` default `0.02` and `--dynamics` default `quadrotor_6d`.
+
+Union, 5 time steps, measured on a machine with 32 logical CPUs:
+
+| Grid | Decomposition: points off > 1e-6, final time | Local update: points off > 1e-6 | Leaking mode: leaking points, point updates, correction time |
+|---|---|---|---|
+| 7⁶ (117649 points) | 74074 | 0 | `smallest`: 45619, 330729, 4.3 s; `delta`: 16807, 298977, 4.1 s |
+| 9⁶ (531441 points) | 286339 | 0 | `smallest`: 164025, 1234467, 16.6 s; `delta`: 59049, 1120419, 14.7 s |
+
+Both leaking modes leave 0 points with error > 1e-6 at every time step. Here `delta` gives the smaller leaking set: δ (0.204) is less than one grid cell, so it is just the switching surface x = y, while `smallest` adds its neighbours in all 6 dimensions.
 
 ## Code Structure
 
@@ -298,10 +332,14 @@ It saves `results/result_decomp_6d_union.npy` and `results/result_local_6d_union
     compute/decomposition_3d.py (odp HJSolver)
     └── subdynamics/dubins_3d.py
 
-    numpy_impl/local_update_6d.py
-    ├── compute/decomposition_6d.py
-    │   └── subdynamics/ (from --dynamics)
+    compute/direct_6d.py, compute/decomposition_6d.py   (save results/*_6d_union.npy)
+    ├── compute/config_6d.py   (grid, initial values, arguments)
+    ├── dynamics/ (--dynamics, default quadrotor_6d), subdynamics/quadrotor_6d.py
+    └── common/            (spatial_deriv, combine)
+
+    numpy_impl/local_update_6d.py   (reads the saved 6d results)
+    ├── compute/config_6d.py
     ├── dynamics/ (--dynamics, default quadrotor_6d)
-    └── common/            (spatial_deriv, leaking, combine)
+    └── common/            (spatial_deriv, leaking, stats, params, combine)
 
 `common/plotting.py` holds the overlay plots from the 2d and 6d cases. It needs `pre_plot` from `odp.Plots`, which the current optimized_dp no longer has, so it cannot be imported with the current version. No script imports it.

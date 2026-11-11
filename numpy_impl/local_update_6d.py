@@ -1,240 +1,178 @@
-from compute.direct_6d import direct_comp
-from compute.decomposition_6d import decomposition
-
+# Local update of the 6D quadrotor decomposition result, pure numpy version.
+# Corrects the decomposition result near the leaking corners so it matches the direct computation
+# (compute/direct_6d.py). Same growing-region update as numpy_impl/local_update_3d.py, with the
+# numerical scheme of compute/direct_6d.py: average of the one-sided first order derivatives,
+# no dissipation, forward Euler.
 import argparse
 import os
-
-import numpy as np
-import heterocl as hcl
-import math
-# import cv2
-
-# from common.plotting import *  (unused here, and it needs pre_plot, which the current optimized_dp no longer has)
-from odp.Plots import PlotOptions
-from odp.Plots import plot_isosurface, plot_valuefunction
-
-import plotly.express as px
-
-from odp.Grid import Grid
-from odp.Shapes import *
-
-from dynamics import add_dynamics_args, make_dynamics, make_subdynamics
-
-# The function of computing first order spatial derivative
-from common.spatial_deriv import spa_deriv
-
-from common.leaking import ground_truth_L, new_theory_L, ground_truth_delta
-from common.combine import check_combine
-
 import time
 
-num = 21
-lookback_length = 0.1
+import numpy as np
+
+from compute.config_6d import grid_6d
+from common.combine import check_combine
+from common.leaking import dilate, get_leaking_set
+from common.params import parse_args_with_params
+from common.spatial_deriv import spa_deriv
+from common.stats import printCorrectnessStatistics
+from dynamics import add_dynamics_args, make_dynamics
+
+
+def recomputeValueChange(data, index, grid, sys, t, t_step, state_values):
+    '''
+        Value change of one forward Euler step at index, same arithmetic as compute/direct_6d.py.
+            index: tuple of grid indices
+            state_values: list of the grid coordinates of each dimension
+    '''
+    dims = len(index)
+    # Average of the left and right spatial derivatives (1st order)
+    grad = []
+    for dim in range(dims):
+        dV_L, dV_R = spa_deriv(index, data, grid, dim, boundary="one_sided")
+        grad.append((dV_L + dV_R)/2)
+
+    # Optimal control and dynamical rates of change
+    state = [state_values[dim][index[dim]] for dim in range(dims)]
+    uOpt = sys.opt_ctrl_numpy(t, state, grad)
+    rates = sys.dynamics_numpy(t, state, uOpt, 0)
+
+    # Same order of additions as compute/direct_6d.py
+    data_change = rates[0]*grad[0]
+    for dim in range(1, dims):
+        data_change = data_change + rates[dim]*grad[dim]
+    return data_change*t_step
+
+
+def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e-6):
+    '''
+        Local updating based on a saved decomposition result
+            decomp_file: npy file of the decomposition result, shape (x, y, vx, vy, theta, w, t),
+                index 0 of the last axis is t = 0
+            leaking: boolean mask of the initial leaking set, see get_leaking_set in common/leaking.py
+            threshold: a point counts as corrected if it differs from the decomposition by more than this
+
+        The update region grows over time: at each time step, the points updated are the leaking
+        set plus every point (and its neighbours) whose value at the previous time step differs
+        from the decomposition result. Every other point keeps the decomposition value.
+    '''
+    # Step 1: load the decomposition result, the initial value function is the decomposition at t = 0
+    result_decomp = np.load(decomp_file)
+    data = result_decomp[..., 0].astype(np.float64)
+    state_values = [np.reshape(grid.vs[dim], grid.pts_each_dim[dim]) for dim in range(grid.dims)]
+
+    # Step 2: local updating loop over time steps (pure numpy version)
+    result_local = result_decomp.copy()
+    total_updated = 0
+    start = time.time()
+
+    for i in range(1, result_decomp.shape[-1]):
+        t = np.array([(i-1)*t_step, i*t_step])
+
+        # Step 2a: points corrected at the previous time step (different from the decomposition)
+        corrected = abs(data - result_decomp[..., i-1]) > threshold
+
+        # Step 2b: update region = leaking set + corrected points and their neighbours
+        region = dilate(corrected, grid) | leaking
+
+        # Step 2c: start from the decomposition result, recompute one Euler step inside the region
+        new_data = result_decomp[..., i].astype(np.float64)
+        for index in np.argwhere(region):
+            index = tuple(index)
+            new_data[index] = data[index] + recomputeValueChange(data, index, grid, sys, t, t_step, state_values)
+        data = new_data
+
+        # Step 2d: save the corrected value function of this time step
+        result_local[..., i] = data
+        num_updated = int(region.sum())
+        total_updated += num_updated
+        print(f"Time step {i}: {num_updated} points updated, {time.time() - start:.1f} s")
+
+    print(f"Total correction time: {time.time() - start:.4f} seconds")
+    print(f"Total point updates: {total_updated} / {data.size * (result_decomp.shape[-1] - 1)}")
+    return result_local
 
 
 def main():
+    '''
+        Read the decomposition (compute/decomposition_6d.py) and, if given, the direct computation
+        (compute/direct_6d.py), run the local update, save it to results/result_local_6d_<combine>.npy
+        and compare it with the direct computation.
+    '''
+    # Step 1: parse and check the inputs (from the command line and/or the --params file)
     parser = argparse.ArgumentParser()
+    parser.add_argument("--params", help="JSON parameter file (see numpy_impl/params/), its keys are the argument names below "
+                        "without '--'. Arguments given on the command line override the file.", default=None)
+    parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, vx, vy, theta, w, t). "
+                        "Required, on the command line or in --params.", default=None)
+    parser.add_argument("--true_file", help="Optional npy file of the direct computation result, same shape as --decomp_file. "
+                        "If not given, the local update runs without the comparison.", default=None)
+    parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1 on the 6D grid, "
+                        "saved by compute/decomposition_6d.py.", default="results/init_1_6d.npy")
+    parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2 on the 6D grid, "
+                        "saved by compute/decomposition_6d.py.", default="results/init_2_6d.npy")
     parser.add_argument("--combine", choices=["union", "intersection"], default="union",
-                        help="How the subsystems are combined: 'union' = min(V1, V2), 'intersection' = max(V1, V2). "
+                        help="How the subsystems are combined: 'union' = min(V1, V2), avoid (uMode max). "
                         "Only union is implemented for 6d.")
+    parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
+                        help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
+                        "'delta' = |V1 - V2| < delta.")
+    parser.add_argument("--t_step", help="Time step used to compute the files.", default=0.02, type=float)
     add_dynamics_args(parser, default="quadrotor_6d")
-    args = parser.parse_args()
+    args = parse_args_with_params(parser)
+
+    if args.decomp_file is None:
+        parser.error("--decomp_file is required (on the command line or in --params)")
     try:
         check_combine(args.combine, ("union",), "6d")
     except NotImplementedError as e:
         parser.error(str(e))
-    combine = args.combine
+    for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
+        if path is not None and not os.path.isfile(path):
+            parser.error(f"file not found: {path}")
+    decomp_shape = np.load(args.decomp_file, mmap_mode='r').shape
+    if len(decomp_shape) != 7:
+        parser.error(f"{args.decomp_file} must have shape (x, y, vx, vy, theta, w, t), got {decomp_shape}")
+    if args.true_file is not None:
+        true_shape = np.load(args.true_file, mmap_mode='r').shape
+        if decomp_shape != true_shape:
+            parser.error(f"shape mismatch: {args.decomp_file} {decomp_shape} vs {args.true_file} {true_shape}, "
+                         "generate both with the same grid_size, t_step and lookback_length")
+    data_init_upper = np.load(args.init_1)
+    data_init_lower = np.load(args.init_2)
+    for path, data in ((args.init_1, data_init_upper), (args.init_2, data_init_lower)):
+        if data.shape != decomp_shape[:-1]:
+            parser.error(f"shape mismatch: {path} {data.shape} vs {args.decomp_file} {decomp_shape[:-1]} (without t), "
+                         "generate them with the same compute/decomposition_6d.py run")
+
+    # Step 2: set the dynamics (--dynamics, --dynamics_params), use the same as the files
     try:
-        sys = make_dynamics(args.dynamics, args.dynamics_params, combine, dim=6)
-        subsystems = make_subdynamics(args.dynamics, args.dynamics_params, combine, dim=6)
+        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=6)
     except (ValueError, TypeError) as e:
         parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
     print(f"Dynamics: {args.dynamics} {vars(sys)}")
 
-    # grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
-    result_decomp, result_upper, result_lower = decomposition(num, saveAllTimeStep=True, lookback_length=lookback_length, combine=combine,
-                                                              subsystems=subsystems)
+    # Step 3: 6D grid with the grid size read from the decomposition file
+    num = decomp_shape[0]
+    grid = grid_6d(num)
+    print(f"Grid size: {num}^6, time steps: {decomp_shape[-1] - 1}")
 
-    print('The size of the decomposition result', result_decomp.shape)
+    # Step 4: initial leaking set from the subsystem initial values (--init_1, --init_2)
+    leaking = get_leaking_set(data_init_upper, data_init_lower, np.load(args.decomp_file, mmap_mode='r'), grid,
+                              args.leaking_mode)
 
-    decomp_final = result_decomp[-1]
-    # true_final = result_true[-1]
-    # result_diff = decomp_final - true_final
+    # Step 5: run the local update and save the corrected result
+    result_local = local_update_from_file(args.decomp_file, leaking, grid, sys, args.t_step)
+    os.makedirs("results", exist_ok=True)
+    path = f"results/result_local_6d_{args.combine}.npy"
+    np.save(path, result_local)
+    print(f"Saved {path}")
 
-    # fig = px.imshow(result_diff)
-    # fig.show()
-
-    # Create Grid
-    grid_min = np.array([-1.0, -1.0, -2.0, -2.0, -2.0, -2.0])
-    grid_max = np.array([4.0, 4.0, 2.0, 2.0, 2.0, 2.0])
-    dims = grid_min.shape[0]
-    N = np.array([num, num, num, num, num, num])
-    grid = Grid(grid_min, grid_max, dims, N)
-
-    ## Initialize value function
-    data1 = Lower_Half_Space(grid, 0, 0)
-    data2 = Lower_Half_Space(grid, 1, 0)
-    data3 = Lower_Half_Space(grid, 4, -1)
-    data4 = Upper_Half_Space(grid, 4, 1)
-    data = np.minimum(data1, data2)
-    # data = np.minimum(data, data3)
-    # data = np.minimum(data, data4)
-
-
-
-    # data = np.minimum(data_upper, data_lower)  
-    # delta = ground_truth_delta(true_final, decomp_final, result_upper[-1], result_lower[-1]) 
-
-
-    indice = new_theory_L(result_decomp, data, result_upper, result_lower)
-    # indice_gt = ground_truth_L(true_final, decomp_final)
-
-
-    indice = indice
-    # print(indice.shape)
-    indice_transpose = indice.transpose()
-    # print(indice_transpose.shape)
-    indices_ref = np.ravel_multi_index(indice_transpose, decomp_final.shape)
-    # print(indices_ref.shape)
-
-    # plot_diff = result_diff.copy()
-    # np.put(plot_diff, indices_ref, 1)
-    # fig1 = px.imshow(plot_diff)
-    # fig1.show()
-
-    # Set computational time steps
-    t_step = 0.02
-    small_number = 1e-5
-    tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
-
-
-    # Initialize the value function
-    # data_init = ShapeRectangle(grid, [-1.0, -1.0, -1.0, -1.0, -math.pi, -1.0], [1.0, 1.0, 1.0, 1.0, math.pi, 1.0])
-    # data_init = data
-
-    # data = decomp_final.copy()
-    # np.put(data, indices_ref, data_init[indice_transpose[0], indice_transpose[1]])
-
-    # data = data_init.copy()
-
-
-    '''
-    Below is the local updating loop of the value function with respect to the indices
-    pure numpy version
-    '''
-    list_x0 = np.reshape(grid.vs[0], grid.pts_each_dim[0])
-    list_x1 = np.reshape(grid.vs[1], grid.pts_each_dim[1])
-    list_x2 = np.reshape(grid.vs[2], grid.pts_each_dim[2])
-    list_x3 = np.reshape(grid.vs[3], grid.pts_each_dim[3])
-    list_x4 = np.reshape(grid.vs[4], grid.pts_each_dim[4])
-    list_x5 = np.reshape(grid.vs[5], grid.pts_each_dim[5])
-
-    data_change = np.zeros(tuple(grid.pts_each_dim))
-
-    tNow = tau[0]
-
-    start = time.time()
-
-    for i in range(1, len(tau)):
-        t = np.array([tNow, tau[i]])
-        print("Time step: ", t)
-
-
-        for ind in range(len(indice)):
-            # print(indices[i])
-            # get indices
-            x0 = indice[ind][0]
-            x1 = indice[ind][1]
-            x2 = indice[ind][2]
-            x3 = indice[ind][3]
-            x4 = indice[ind][4]
-            x5 = indice[ind][5]
-
-            # get spatial derivative
-            dV_d0_L, dV_d0_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 0, boundary="one_sided")
-            dV_d1_L, dV_d1_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 1, boundary="one_sided")
-            dV_d2_L, dV_d2_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 2, boundary="one_sided")
-            dV_d3_L, dV_d3_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 3, boundary="one_sided")
-            dV_d4_L, dV_d4_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 4, boundary="one_sided")
-            dV_d5_L, dV_d5_R = spa_deriv((x0, x1, x2, x3, x4, x5), data, grid, 5, boundary="one_sided")
-
-
-            # Get the average gradient
-            dV_d0 = (dV_d0_L + dV_d0_R)/2
-            dV_d1 = (dV_d1_L + dV_d1_R)/2
-            dV_d2 = (dV_d2_L + dV_d2_R)/2
-            dV_d3 = (dV_d3_L + dV_d3_R)/2
-            dV_d4 = (dV_d4_L + dV_d4_R)/2
-            dV_d5 = (dV_d5_L + dV_d5_R)/2
-
-            # get the dynamical rates of change
-            uTOpt, utOpt = sys.opt_ctrl_numpy(t, [list_x0[x0], list_x1[x1], list_x2[x2], list_x3[x3], list_x4[x4], list_x5[x5]], [dV_d0, dV_d1, dV_d2, dV_d3, dV_d4, dV_d5])
-            d0_dt, d1_dt, d2_dt, d3_dt, d4_dt, d5_dt = sys.dynamics_numpy(t, [list_x0[x0], list_x1[x1], list_x2[x2], list_x3[x3], list_x4[x4], list_x5[x5]], [uTOpt, utOpt], 0)
-            # Updating the value function
-            data_change[x0, x1, x2, x3, x4, x5] = d0_dt*dV_d0 + d1_dt*dV_d1 + d2_dt*dV_d2 + d3_dt*dV_d3 + d4_dt*dV_d4 + d5_dt*dV_d5
-
-        data = data + data_change*t_step    
-        tNow += t_step
-        data_change = np.zeros(tuple(grid.pts_each_dim))
-
-        data_ref = result_decomp[i].copy()
-        np.put(data_ref, indices_ref, data[indice_transpose[0], indice_transpose[1], indice_transpose[2], indice_transpose[3], indice_transpose[4], indice_transpose[5]])
-
-        data = data_ref.copy()
-
-        execution_time = time.time() - start
-    print("Total kernel time local: ", execution_time)
-    print("Finished updating the value function")
-
-
-    '''
-    Combination process: local updating result, and decomposition result
-    '''
-    result_combine = decomp_final.copy()
-
-    np.put(result_combine, indices_ref, data[indice_transpose[0], indice_transpose[1], indice_transpose[2], indice_transpose[3], indice_transpose[4], indice_transpose[5]])
-    print('Im here')
-
-
-    '''
-    Comparision with direct computation
-    '''
-    # po = PlotOptions(dims_plot=[0,1,3], slices=[10,10,10],opacity=0.5,
-    #                 colorscale="Bluered",)
-    # plot_overlay_3dsets(grid, true_final, decomp_final, po)
-    # plot_overlay_3dsets(grid, true_final, result_combine, po)
-
-
-    # grid, result_true = direct_comp(num, saveAllTimeStep=True, lookback_length=lookback_length)
-    # true_final = result_true[-1]
-
-    # np.save('result_direct_6d.npy', result_true)
-    # result_decomp is saved by decomposition() as results/result_decomp_6d_<combine>.npy
-    np.save(f'results/result_local_6d_{combine}.npy', result_combine)
-
-    # print('The total number of points: ', true_final.shape[0]*true_final.shape[1]*true_final.shape[2]*true_final.shape[3]*true_final.shape[4]*true_final.shape[5])  
-    print('The number of points getting locally updated: ', indice.shape)
-    # print('Original number of points with different values: ', np.argwhere(abs(decomp_final-true_final)>1e-6).shape)
-    # print('The number of points with different values after local updating: ', np.argwhere(abs(result_combine-true_final)>1e-6).shape)
-
-    # count = true_final.shape[0]*true_final.shape[1]
-
-    # diff_decomp = np.sum(result_diff) / count
-    # diff_corrected = np.sum(result_combine - true_final) / count
-    # print('The average error between direct computation and decomposition: ', diff_decomp)
-    # print('The average error between direct computation and local updates: ', diff_corrected)
-
-    # diff_decomp = np.sum(abs(result_diff)) / count
-    # diff_corrected = np.sum(abs(result_combine - true_final)) / count
-    # print('The average absolute error between direct computation and decomposition: ', diff_decomp)
-    # print('The average absolute error between direct computation and local updates: ', diff_corrected)
-
-    # diff_decomp_max = np.max(abs(result_diff))
-    # diff_corrected_max = np.max(abs(result_combine - true_final))
-    # print('The maximum absolute error between direct computation and decomposition: ', diff_decomp_max)
-    # print('The maximum absolute error between direct computation and local updates: ', diff_corrected_max)
+    # Step 6: compare the decomposition and local update results with the direct computation (if given)
+    if args.true_file is not None:
+        printCorrectnessStatistics(np.load(args.true_file), np.load(args.decomp_file), result_local)
+    else:
+        print("No --true_file given, skipping the comparison with the direct computation")
 
 
 if __name__ == "__main__":
-    os.makedirs("results", exist_ok=True)
     main()

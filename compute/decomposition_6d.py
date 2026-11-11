@@ -1,3 +1,5 @@
+import argparse
+
 import numpy as np
 import math
 
@@ -13,23 +15,20 @@ import time
 import os
 
 from common.combine import check_combine
+from compute.config_6d import add_compute_args_6d, grid_sub_6d, result_files_6d
 
-def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="union", subsystems=None):
+def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="union", subsystems=None, t_step=0.02):
     '''
-        Decomposition of the 6D quadrotor into two 4D subsystems, combined as min(V1, V2).
+        Decomposition of the 6D quadrotor into two 4D subsystems, subsystem 1 (x, vx, theta, w) and
+        subsystem 2 (y, vy, theta, w), combined as min(V1, V2).
             combine: "union" (only union is implemented for 6d)
             subsystems: (subsystem 1, subsystem 2) dynamics, e.g. from dynamics.make_subdynamics;
                 None uses subsys_1, subsys_2 with uTMax=1, utMax=1, uMode='max'
-        Saves results/result_decomp_6d_<combine>.npy.
+        Returns (V, V1, V2) on the 6D grid, time as the first axis.
     '''
     check_combine(combine, ("union",), "6d")
-    # num = 51  
-    # Create Grid
-    grid_min = np.array([-1.0, -2.0, -2.0, -2.0])
-    grid_max = np.array([4.0, 2.0, 2.0, 2.0])
-    dims = grid_min.shape[0]
-    N = np.array([num, num, num, num])
-    g = Grid(grid_min, grid_max, dims, N)
+    # Create Grid of the subsystems
+    g = grid_sub_6d(num)
     
     # Initialize value function
     data_sub_1_1 = Lower_Half_Space(g, 0, 0)
@@ -46,8 +45,6 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="unio
     
     
     ## Look-back length and time step of computation
-    # lookback_length = 0.02
-    t_step = 0.02
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
     
@@ -169,13 +166,6 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="unio
     Combine the results from 2 subsystems
     '''
         
-    grid_min = np.array([-4.0, -4.0, -4.0, -4.0, -math.pi, -4.0])
-    grid_max = np.array([4.0, 4.0, 4.0, 4.0, math.pi, 4.0])
-    dims = grid_min.shape[0]
-    pDim = [4]
-    N = np.array([num, num, num, num, num, num])
-    g = Grid(grid_min, grid_max, dims, N, periodicDims=pDim)
-    
     if not saveAllTimeStep:
         result_upper_flip = np.flip(data_sub_1, axis=0) 
         result_upper_expand = np.tile(result_upper_flip, (num, num, 1, 1, 1, 1))
@@ -212,11 +202,36 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="unio
     print("Total kernel time decomposition: ", execution_time)
     print("Finished updating the value function")
     
-    os.makedirs('results', exist_ok=True)
-    np.save(f'results/result_decomp_6d_{combine}.npy', result_full)
-        
     return result_full, result_upper, result_lower
-            
-    
+
+
+def main():
+    '''
+        Run the 6d decomposition and save
+            results/result_decomp_6d_<combine>.npy: V = min(V1, V2), shape (x, y, vx, vy, theta, w, t)
+            results/init_1_6d.npy, results/init_2_6d.npy: V1, V2 at t = 0 on the 6D grid, used for the leaking set
+    '''
+    from dynamics import make_subdynamics
+    parser = argparse.ArgumentParser()
+    add_compute_args_6d(parser)
+    args = parser.parse_args()
+    try:
+        check_combine(args.combine, ("union",), "6d")
+        subsystems = make_subdynamics(args.dynamics, args.dynamics_params, args.combine, dim=6)
+    except (ValueError, TypeError, NotImplementedError) as e:
+        parser.error(str(e))
+    print(f"Subsystem dynamics: {args.dynamics} {vars(subsystems[0])}")
+    result_full, result_upper, result_lower = decomposition(
+        args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length, combine=args.combine,
+        subsystems=subsystems, t_step=args.t_step)
+    os.makedirs(args.results_dir, exist_ok=True)
+    files = result_files_6d(args.combine, args.results_dir)
+    np.save(files["decomp"], np.moveaxis(result_full, 0, -1))
+    np.save(files["init_1"], result_upper[0])
+    np.save(files["init_2"], result_lower[0])
+    for key in ("decomp", "init_1", "init_2"):
+        print(f"Saved {files[key]}")
+
+
 if __name__ == "__main__":
-    decomposition(21, saveAllTimeStep=True, lookback_length=0.02)
+    main()

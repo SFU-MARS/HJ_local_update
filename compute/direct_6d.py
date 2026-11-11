@@ -1,3 +1,6 @@
+import argparse
+import os
+
 import numpy as np
 import math
 
@@ -15,40 +18,33 @@ from odp.solver import HJSolver
 import time
 
 from common.combine import check_combine
+from compute.config_6d import add_compute_args_6d, grid_6d, init_values_6d, result_files_6d
 
 
-def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02, combine="union"):
+def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02, combine="union", t_step=0.02, sys=None):
     '''
-        Direct computation of the 6D quadrotor, used as the ground truth.
+        Direct computation of the 6D quadrotor, used as the ground truth. Pure Python loop over every
+        grid point, so only small grids are practical (about 30 s for 9^6 with 5 time steps).
             combine: "union" (only union is implemented for 6d)
+            sys: full system dynamics, e.g. from dynamics.make_dynamics; None uses quadrotor with
+                 uTMax=1, utMax=1, uMode='max'
+        Returns (grid, list of the value function at each time step).
     '''
     check_combine(combine, ("union",), "6d")
 
-# num = 101
-# saveAllTimeStep = True
     # Create Grid
-    grid_min = np.array([-1.0, -1.0, -2.0, -2.0, -2.0, -2.0])
-    grid_max = np.array([4.0, 4.0, 2.0, 2.0, 2.0, 2.0])
-    dims = grid_min.shape[0]
-    N = np.array([num, num, num, num, num, num])
-    g = Grid(grid_min, grid_max, dims, N)
+    g = grid_6d(num)
 
-    ## Initialize value function
-    data1 = Lower_Half_Space(g, 0, 0)
-    data2 = Lower_Half_Space(g, 1, 0)
-    data3 = Lower_Half_Space(g, 4, -1)
-    data4 = Upper_Half_Space(g, 4, 1)
+    ## Initialize value function: union of the half spaces x <= 0 and y <= 0
+    data1, data2 = init_values_6d(num)
     data = np.minimum(data1, data2)
-    # data = np.minimum(data, data3)
-    # data = np.minimum(data, data4)
-    
-    # lookback_length = 0.02
-    t_step = 0.02
+
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-    sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
-    
+    if sys is None:
+        sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
+
 
     '''
     Direct updating loop
@@ -127,8 +123,31 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02, combine="union"
 
     return g, data
 
+def main():
+    '''
+        Run the 6d direct computation and save it to results/result_direct_6d_<combine>.npy,
+        shape (x, y, vx, vy, theta, w, t).
+    '''
+    from dynamics import make_dynamics
+    parser = argparse.ArgumentParser()
+    add_compute_args_6d(parser)
+    args = parser.parse_args()
+    try:
+        check_combine(args.combine, ("union",), "6d")
+        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=6)
+    except (ValueError, TypeError, NotImplementedError) as e:
+        parser.error(str(e))
+    print(f"Dynamics: {args.dynamics} {vars(sys)}")
+    _, data_list = direct_comp(args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length,
+                               combine=args.combine, t_step=args.t_step, sys=sys)
+    os.makedirs(args.results_dir, exist_ok=True)
+    path = result_files_6d(args.combine, args.results_dir)["direct"]
+    np.save(path, np.moveaxis(np.asarray(data_list), 0, -1))
+    print(f"Saved {path}")
+
+
 if __name__ == "__main__":
-    direct_comp(21)
+    main()
 
     
     
