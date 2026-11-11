@@ -27,7 +27,12 @@ def parse_args_with_params(parser):
             if action.choices is not None and params[key] not in action.choices:
                 parser.error(f"{key} in {params_path} must be one of {list(action.choices)}, got {value!r}")
         parser.set_defaults(**params)
-    return parser.parse_args()
+    args = parser.parse_args()
+    # "null" on the command line means not given, like null in the JSON file (e.g. --true_file null)
+    for key, value in vars(args).items():
+        if value == "null":
+            setattr(args, key, None)
+    return args
 
 
 def json_object(value):

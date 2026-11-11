@@ -9,13 +9,12 @@ import time
 
 import numpy as np
 
-from compute.config_6d import grid_6d
+from compute.config_6d import add_local_update_args_6d, setup_local_update_6d
 from common.combine import check_combine
-from common.leaking import dilate, get_leaking_set
+from common.leaking import dilate
 from common.params import parse_args_with_params
 from common.spatial_deriv import spa_deriv
 from common.stats import printCorrectnessStatistics
-from dynamics import add_dynamics_args, make_dynamics
 
 
 def recomputeValueChange(data, index, grid, sys, t, t_step, state_values):
@@ -98,67 +97,11 @@ def main():
         (compute/direct_6d.py), run the local update, save it to results/result_local_6d_<combine>.npy
         and compare it with the direct computation.
     '''
-    # Step 1: parse and check the inputs (from the command line and/or the --params file)
+    # Steps 1-4: inputs, dynamics, grid and initial leaking set (see compute/config_6d.py)
     parser = argparse.ArgumentParser()
-    parser.add_argument("--params", help="JSON parameter file (see numpy_impl/params/), its keys are the argument names below "
-                        "without '--'. Arguments given on the command line override the file.", default=None)
-    parser.add_argument("--decomp_file", help="npy file of the decomposition result, shape (x, y, vx, vy, theta, w, t). "
-                        "Required, on the command line or in --params.", default=None)
-    parser.add_argument("--true_file", help="Optional npy file of the direct computation result, same shape as --decomp_file. "
-                        "If not given, the local update runs without the comparison.", default=None)
-    parser.add_argument("--init_1", help="npy file of the subsystem 1 initial value V1 on the 6D grid, "
-                        "saved by compute/decomposition_6d.py.", default="results/init_1_6d.npy")
-    parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2 on the 6D grid, "
-                        "saved by compute/decomposition_6d.py.", default="results/init_2_6d.npy")
-    parser.add_argument("--combine", choices=["union", "intersection"], default="union",
-                        help="How the subsystems are combined: 'union' = min(V1, V2), avoid (uMode max). "
-                        "Only union is implemented for 6d.")
-    parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
-                        help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
-                        "'delta' = |V1 - V2| < delta.")
-    parser.add_argument("--t_step", help="Time step used to compute the files.", default=0.02, type=float)
-    add_dynamics_args(parser, default="quadrotor_6d")
+    add_local_update_args_6d(parser)
     args = parse_args_with_params(parser)
-
-    if args.decomp_file is None:
-        parser.error("--decomp_file is required (on the command line or in --params)")
-    try:
-        check_combine(args.combine, ("union",), "6d")
-    except NotImplementedError as e:
-        parser.error(str(e))
-    for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
-        if path is not None and not os.path.isfile(path):
-            parser.error(f"file not found: {path}")
-    decomp_shape = np.load(args.decomp_file, mmap_mode='r').shape
-    if len(decomp_shape) != 7:
-        parser.error(f"{args.decomp_file} must have shape (x, y, vx, vy, theta, w, t), got {decomp_shape}")
-    if args.true_file is not None:
-        true_shape = np.load(args.true_file, mmap_mode='r').shape
-        if decomp_shape != true_shape:
-            parser.error(f"shape mismatch: {args.decomp_file} {decomp_shape} vs {args.true_file} {true_shape}, "
-                         "generate both with the same grid_size, t_step and lookback_length")
-    data_init_upper = np.load(args.init_1)
-    data_init_lower = np.load(args.init_2)
-    for path, data in ((args.init_1, data_init_upper), (args.init_2, data_init_lower)):
-        if data.shape != decomp_shape[:-1]:
-            parser.error(f"shape mismatch: {path} {data.shape} vs {args.decomp_file} {decomp_shape[:-1]} (without t), "
-                         "generate them with the same compute/decomposition_6d.py run")
-
-    # Step 2: set the dynamics (--dynamics, --dynamics_params), use the same as the files
-    try:
-        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=6)
-    except (ValueError, TypeError) as e:
-        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
-    print(f"Dynamics: {args.dynamics} {vars(sys)}")
-
-    # Step 3: 6D grid with the grid size read from the decomposition file
-    num = decomp_shape[0]
-    grid = grid_6d(num)
-    print(f"Grid size: {num}^6, time steps: {decomp_shape[-1] - 1}")
-
-    # Step 4: initial leaking set from the subsystem initial values (--init_1, --init_2)
-    leaking = get_leaking_set(data_init_upper, data_init_lower, np.load(args.decomp_file, mmap_mode='r'), grid,
-                              args.leaking_mode)
+    sys, grid, leaking = setup_local_update_6d(parser, args)
 
     # Step 5: run the local update and save the corrected result
     result_local = local_update_from_file(args.decomp_file, leaking, grid, sys, args.t_step)

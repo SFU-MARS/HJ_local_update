@@ -1,3 +1,6 @@
+# Dynamics and optimal control of the 6D quadrotor, numpy methods (numpy_impl/local_update_6d.py,
+# compute/direct_6d.py) and HeteroCL methods (hcl_impl/local_update_6d.py, same arithmetic).
+import heterocl as hcl
 import numpy as np
 import math
 
@@ -62,10 +65,33 @@ class quadrotor:
         w_dot = uOpt[1]
         
         return (x_dot, y_dot, vx_dot, vy_dot, theta_dot, w_dot)
-        
-    
-    
 
-    
-                
-            
+    def opt_ctrl(self, t, state, spat_deriv):
+        '''
+        HeteroCL version of opt_ctrl_numpy
+        '''
+        T_term = hcl.scalar(0, "T_term")
+        T_term[0] = -spat_deriv[2]*hcl.sin(state[4]) + spat_deriv[3]*hcl.cos(state[4])
+        opt_uT = hcl.scalar(self.uTMax, "opt_uT")
+        opt_ut = hcl.scalar(self.utMax, "opt_ut")
+        if self.uMode == 'min':
+            with hcl.if_(T_term[0] > 0):
+                opt_uT[0] = -opt_uT[0]
+            with hcl.if_(spat_deriv[5] > 0):
+                opt_ut[0] = -opt_ut[0]
+        else:
+            with hcl.if_(T_term[0] < 0):
+                opt_uT[0] = -opt_uT[0]
+            with hcl.if_(spat_deriv[5] < 0):
+                opt_ut[0] = -opt_ut[0]
+        return (opt_uT[0], opt_ut[0])
+
+    def dynamics(self, t, state, uOpt, dOpt):
+        '''
+        HeteroCL version of dynamics_numpy (g = 0)
+        '''
+        vx_dot = hcl.scalar(0, "vx_dot")
+        vy_dot = hcl.scalar(0, "vy_dot")
+        vx_dot[0] = -uOpt[0]*hcl.sin(state[4])
+        vy_dot[0] = uOpt[0]*hcl.cos(state[4])
+        return (state[2], state[3], vx_dot[0], vy_dot[0], state[5], uOpt[1])
