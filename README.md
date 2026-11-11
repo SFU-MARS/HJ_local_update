@@ -32,7 +32,7 @@ python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d_unio
 
 For intersection, use `--combine intersection` and `local_update_2d_intersection.json`.
 
-| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation | Decomposition | Local update: numpy / HeteroCL |
+| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
 | 41² | union | 10 | 1233 / 0 / 0 | 0.024 s | 0.016 s | 0.21 s / 0.0013 s |
 | 41² | intersection | 10 | 897 / 0 / 0 | 0.024 s | 0.016 s | 0.14 s / 0.0011 s |
@@ -60,7 +60,7 @@ python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d_unio
 
 For intersection, use `--combine intersection` and `local_update_3d_intersection.json`.
 
-| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation | Decomposition | Local update: numpy / HeteroCL |
+| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
 | 41³ | union | 25 | 55224 / 6 / 30 | 0.047 s | 0.051 s | 20.9 s / 0.0048 s |
 | 41³ | intersection | 25 | 54902 / 2 / 18 | 0.046 s | 0.051 s | 20.9 s / 0.0048 s |
@@ -86,7 +86,7 @@ Use `--grid_size 9` for a quick run (HeteroCL under a second, numpy about 100 s)
 
 For intersection, use `--combine intersection` and `local_update_6d_intersection.json`.
 
-| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation | Decomposition | Local update: numpy / HeteroCL |
+| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
 | 7⁶ | union | 10 | 72058 / 0 / 0 | 0.10 s | 0.084 s | 28.6 s / 0.0059 s |
 | 7⁶ | intersection | 10 | 71538 / 0 / 0 | 0.099 s | 0.086 s | 27.7 s / 0.0092 s |
