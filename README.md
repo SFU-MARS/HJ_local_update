@@ -138,10 +138,7 @@ Compute scripts (`compute/direct_<dim>.py`, `compute/decomposition_<dim>.py`), t
     hcl_impl/      HeteroCL local updates: local_update_{2d,3d,6d}.py, growing_region.py, kernel_cache.py, params/
     common/        shared code: local update arguments and setup (local_update_setup.py), HJSolver step and spatial
                    derivative (hj_update.py, spatial_deriv.py), leaking set, statistics, parameter files, union/intersection,
-                   reading the large decomposition file straight into HeteroCL (npy_io.py)
+                   reading the large decomposition file straight into HeteroCL (npy_io.py),
+                   plotly overlays of several value functions (plotting.py, not used by any script)
     results/       saved results (not in git)
     kernels/       compiled HeteroCL kernels (not in git)
-
-## Known Limitations
-
-- `common/plotting.py` needs `pre_plot`, which the current optimized_dp no longer has. No script imports it.

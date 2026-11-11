@@ -1,13 +1,12 @@
 # Plotly plots that overlay several value functions, from the 2d and 6d cases.
-# Needs pre_plot from odp.Plots, which the current optimized_dp no longer has, so importing
-# this module fails with the current optimized_dp. No script imports it at the moment.
+# pre_plot (slicing and downsampling) comes from odp.Plots.plotting_utilities; odp.Plots no longer re-exports it.
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 from odp.Grid import Grid
-from odp.Plots import pre_plot
+from odp.Plots.plotting_utilities import pre_plot
 from odp.Plots import PlotOptions
 
 
@@ -267,74 +266,6 @@ def plot_overlay_3dsets(g, data1, data2, plot_option):
                         aspectratio={"x": 1, "y": 1, "z": 0.6}
                         ))
     fig.show()
-        
-        
-    if len(dims_plot) == 3:
-        # plot 2 3D sets
-        dim1, dim2, dim3 = dims_plot[0], dims_plot[1], dims_plot[2]
-        complex_x = complex(0, grid1.pts_each_dim[dim1])
-        complex_y = complex(0, grid1.pts_each_dim[dim2])
-        complex_z = complex(0, grid1.pts_each_dim[dim3])
-        X, Y, Z = np.mgrid[grid1.min[dim1]:grid1.max[dim1]:complex_x,
-                        grid1.min[dim2]:grid1.max[dim2]:complex_y,
-                        grid1.min[dim3]:grid1.max[dim3]:complex_z]
-        
-        trace1 = go.Isosurface(
-            x=X.flatten(),
-            y=Y.flatten(),
-            z=Z.flatten(),
-            value=my_V1.flatten(),
-            isomin=plot_option.min_isosurface,
-            isomax=plot_option.max_isosurface,
-            surface_count=plot_option.surface_count,
-            colorscale="earth",
-            opacity=1,
-            contour=plot_option.contour,
-            flatshading=plot_option.flatshading,
-            lighting=plot_option.lighting,
-            lightposition=plot_option.lightposition,
-            reversescale=plot_option.reversescale,
-            showlegend=plot_option.showlegend,
-            showscale=plot_option.showscale,
-        )
-
-        trace2 = go.Isosurface(
-            x=X.flatten(),
-            y=Y.flatten(),
-            z=Z.flatten(),
-            value=my_V2.flatten(),
-            isomin=plot_option.min_isosurface,
-            isomax=plot_option.max_isosurface,
-            surface_count=plot_option.surface_count,
-            colorscale="sunsetdark",
-            opacity=0.3,
-            contour=plot_option.contour,
-            flatshading=plot_option.flatshading,
-            lighting=plot_option.lighting,
-            lightposition=plot_option.lightposition,
-            reversescale=plot_option.reversescale,
-            showlegend=plot_option.showlegend,
-            showscale=plot_option.showscale,
-        )
-
-        # fig = make_subplots(specs=[[{"secondary_y": True}]])
-        fig = go.Figure()
-        fig.add_trace(trace1)
-        fig.add_trace(trace2)
-        fig.update_layout(
-            title='3D Set',
-            scene=dict( xaxis={"nticks": 20},
-                        zaxis={"nticks": 20},
-                        camera_eye={"x": 0, "y": -1, "z": 0.5},
-                        aspectratio={"x": 1, "y": 1, "z": 0.6}
-                        ))
-        fig.show()
-        
-        
-        
-        
-        
-    
 
 
 def plot_overlay_3Value(g, data1, data2, data3, plot_option):
@@ -352,44 +283,44 @@ def plot_overlay_3Value(g, data1, data2, data3, plot_option):
     if len(dims_plot) == 2:
         # plot 2 2D sets
         # dim1, dim2 = dims_plot[0], dims_plot[1]
-        complex_x = complex(0, grid1.pts_each_dim[dims_plot[0]])
-        complex_y = complex(0, grid1.pts_each_dim[dims_plot[1]])
-        mg_X, mg_Y = np.mgrid[grid1.min[0]:grid1.max[0]: complex_x, grid1.min[1]:grid1.max[1]: complex_y]
+        # go.Surface takes 1D x and y axes and a 2D z indexed [y, x], hence the transposes
+        my_X = np.linspace(grid1.min[0], grid1.max[0], grid1.pts_each_dim[0])
+        my_Y = np.linspace(grid1.min[1], grid1.max[1], grid1.pts_each_dim[1])
         
         # N = my_V1.shape[2]
         
         trace1 = go.Surface(
                     contours = {"z": {"show": True, "start": -1, "end": 1, "size": 1, "color":"white",}},
-                    x=mg_X.flatten(),
-                    y=mg_Y.flatten(),
-                    z=my_V1.flatten(),
+                    x=my_X,
+                    y=my_Y,
+                    z=my_V1.T,
                     colorscale = plot_option.colorscale,
                     opacity = plot_option.opacity,
                     lighting = plot_option.lighting,
                     lightposition=plot_option.lightposition
-                    ),
+                    )
           
         trace2 = go.Surface(
                     contours = {"z": {"show": True, "start": -1, "end": 1, "size": 1, "color":"white",}},
-                    x=mg_X.flatten(),
-                    y=mg_Y.flatten(),
-                    z=my_V2.flatten(),
+                    x=my_X,
+                    y=my_Y,
+                    z=my_V2.T,
                     colorscale = plot_option.colorscale,
                     opacity = plot_option.opacity,
                     lighting = plot_option.lighting,
                     lightposition=plot_option.lightposition
-                    ),
+                    )
         
         trace3 = go.Surface(
                     contours = {"z": {"show": True, "start": -1, "end": 1, "size": 1, "color":"white",}},
-                    x=mg_X.flatten(),
-                    y=mg_Y.flatten(),
-                    z=my_V3.flatten(),
+                    x=my_X,
+                    y=my_Y,
+                    z=my_V3.T,
                     colorscale = plot_option.colorscale,
                     opacity = plot_option.opacity,
                     lighting = plot_option.lighting,
                     lightposition=plot_option.lightposition
-                    ),
+                    )
         
         fig = go.Figure()
         fig.add_trace(trace1)
