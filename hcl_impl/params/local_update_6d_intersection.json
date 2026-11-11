@@ -1,0 +1,12 @@
+{
+    "decomp_file": "results/result_decomp_6d_intersection.npy",
+    "true_file": "results/result_direct_6d_intersection.npy",
+    "init_1": "results/init_1_6d.npy",
+    "init_2": "results/init_2_6d.npy",
+    "combine": "intersection",
+    "dynamics": "quadrotor_6d",
+    "dynamics_params": {"uTMax": 1, "utMax": 1},
+    "leaking_mode": "smallest",
+    "t_step": 0.02,
+    "cache_dir": "kernels"
+}

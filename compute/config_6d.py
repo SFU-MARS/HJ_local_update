@@ -29,8 +29,8 @@ def grid_sub_6d(num):
 
 def init_values_6d(num):
     '''
-        Initial values of the union case: V1 = x (negative for x <= 0), V2 = y (negative for y <= 0),
-        on the 6D grid. The full initial value is min(V1, V2).
+        Initial values: V1 = x (negative for x <= 0), V2 = y (negative for y <= 0), on the 6D grid.
+        The full initial value is min(V1, V2) (union) or max(V1, V2) (intersection).
     '''
     g = grid_6d(num)
     return Lower_Half_Space(g, 0, 0), Lower_Half_Space(g, 1, 0)
@@ -41,15 +41,8 @@ def add_compute_args_6d(parser):
         Arguments of compute/direct_6d.py and compute/decomposition_6d.py. Use the same values for both,
         the local update reads the grid size and number of time steps from the saved files.
     '''
-    from dynamics import add_dynamics_args
-    parser.add_argument("--grid_size", type=int, default=21, help="Grid points per dimension, e.g. 21 for 21^6.")
-    parser.add_argument("--combine", choices=["union", "intersection"], default="union",
-                        help="union = min(V1, V2) with uMode max (avoid). Only union is implemented for 6d.")
-    parser.add_argument("--t_step", type=float, default=0.02, help="Time step.")
-    parser.add_argument("--lookback_length", type=float, default=0.1,
-                        help="Look-back length, lookback_length / t_step time steps.")
-    parser.add_argument("--results_dir", default="results", help="Directory of the saved results.")
-    add_dynamics_args(parser, default="quadrotor_6d")
+    from common.params import add_compute_args
+    add_compute_args(parser, grid_size=21, combine="union", t_step=0.02, lookback_length=0.1, dynamics="quadrotor_6d")
 
 
 def result_files_6d(combine, results_dir="results"):
@@ -83,8 +76,8 @@ def add_local_update_args_6d(parser):
     parser.add_argument("--init_2", help="npy file of the subsystem 2 initial value V2 on the 6D grid, "
                         "saved by compute/decomposition_6d.py.", default="results/init_2_6d.npy")
     parser.add_argument("--combine", choices=["union", "intersection"], default="union",
-                        help="How the subsystems are combined: 'union' = min(V1, V2), avoid (uMode max). "
-                        "Only union is implemented for 6d.")
+                        help="How the subsystems are combined: 'union' = min(V1, V2), avoid (uMode max), "
+                        "'intersection' = max(V1, V2), reach (uMode min). Use the same as for the files.")
     parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
                         help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
                         "'delta' = |V1 - V2| < delta.")
@@ -106,7 +99,7 @@ def setup_local_update_6d(parser, args):
     if args.decomp_file is None:
         parser.error("--decomp_file is required (on the command line or in --params)")
     try:
-        check_combine(args.combine, ("union",), "6d")
+        check_combine(args.combine, ("union", "intersection"), "6d")
     except NotImplementedError as e:
         parser.error(str(e))
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):

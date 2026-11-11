@@ -23,7 +23,7 @@ from dynamics import U_MODE
 
 def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
                   obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="low", plot=True,
-                  combine="union"):
+                  combine="union", v=1, wMax=1, results_dir="results"):
     r'''
         Decompose the 3D Dubins car
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{theta} = w
@@ -37,7 +37,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
                 avoids it (uMode='max')
             combine="intersection": V = max(V1, V2), the target is the intersection of the rectangles
                 (a square), control reaches it (uMode='min')
-        Saves results/result_decomp_3d_<combine>.npy and results/init_1_3d.npy, results/init_2_3d.npy
+            v, wMax: speed and turn rate bound of the Dubins car
+        Saves <results_dir>/result_decomp_3d_<combine>.npy and <results_dir>/init_1_3d.npy, init_2_3d.npy
         (the initial values do not depend on combine).
     '''
     check_combine(combine, ("union", "intersection"), "3d")
@@ -52,17 +53,17 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
 
     # Save the subsystem initial values on the 3D grid (x, y, theta), used for the leaking set
     # in the local update: init_1 = V1(x, theta), init_2 = V2(y, theta)
-    os.makedirs('results', exist_ok=True)
-    np.save('results/init_1_3d.npy', np.broadcast_to(data_sub_1[:, np.newaxis, :], (num, num, num)))
-    np.save('results/init_2_3d.npy', np.broadcast_to(data_sub_2[np.newaxis, :, :], (num, num, num)))
+    os.makedirs(results_dir, exist_ok=True)
+    np.save(f'{results_dir}/init_1_3d.npy', np.broadcast_to(data_sub_1[:, np.newaxis, :], (num, num, num)))
+    np.save(f'{results_dir}/init_2_3d.npy', np.broadcast_to(data_sub_2[np.newaxis, :, :], (num, num, num)))
 
     ## Look-back length and time step of computation
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
     # Set system dynamics: union avoids the obstacle (uMode max), intersection reaches the target (uMode min)
-    sys_1 = subsys_1(v=1, wMax=1, dMax=0.0, uMode=U_MODE[combine], dMode='min')
-    sys_2 = subsys_2(v=1, wMax=1, dMax=0.0, uMode=U_MODE[combine], dMode='min')
+    sys_1 = subsys_1(v=v, wMax=wMax, dMax=0.0, uMode=U_MODE[combine], dMode='min')
+    sys_2 = subsys_2(v=v, wMax=wMax, dMax=0.0, uMode=U_MODE[combine], dMode='min')
 
     # Backward reachable tube of the obstacle
     compMethods = {"TargetSetMode": "None"}
@@ -112,7 +113,9 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     print("Total kernel time decomposition: ", execution_time)
     print("Finished updating the value function")
 
-    np.save(f'results/result_decomp_3d_{combine}.npy', result_full)
+    np.save(f'{results_dir}/result_decomp_3d_{combine}.npy', result_full)
+    for name in (f"result_decomp_3d_{combine}.npy", "init_1_3d.npy", "init_2_3d.npy"):
+        print(f"Saved {results_dir}/{name}")
 
     # Visualization of 3D value function
     if plot:
@@ -124,5 +127,27 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     return result_full, result_upper, result_lower, g
 
 
+def main():
+    '''
+        Command-line version, same arguments as the 2d and 6d compute scripts (common/params.add_compute_args).
+    '''
+    import argparse
+    from common.params import add_compute_args
+    from dynamics import make_dynamics
+    parser = argparse.ArgumentParser()
+    add_compute_args(parser, grid_size=41, combine="union", t_step=0.04, lookback_length=1.0, dynamics="dubins_3d")
+    parser.add_argument("--accuracy", default="low", help="HJSolver accuracy, 'low' matches the local update scheme.")
+    parser.add_argument("--plot", action="store_true", help="Also save an interactive plot to plots/.")
+    args = parser.parse_args()
+    try:
+        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=3)
+    except (ValueError, TypeError) as e:
+        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
+    print(f"Dynamics: {args.dynamics} {vars(sys)}")
+    decomposition(args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length, t_step=args.t_step,
+         accuracy=args.accuracy, plot=args.plot, combine=args.combine, v=sys.v, wMax=sys.wMax,
+         results_dir=args.results_dir)
+
+
 if __name__ == "__main__":
-    decomposition(41, saveAllTimeStep=True, lookback_length=1.0)
+    main()

@@ -49,12 +49,8 @@ numpy and HeteroCL correct the same points, values within 5e-16.
 
 ```bash
 # 1. generate: results/result_{direct,decomp}_3d_union.npy, results/init_{1,2}_3d.npy
-python -c "
-from compute.direct_3d import direct_comp
-from compute.decomposition_3d import decomposition
-direct_comp(41, plot=False, combine='union')
-decomposition(41, plot=False, combine='union')
-"
+python -m compute.direct_3d --grid_size 41 --combine union
+python -m compute.decomposition_3d --grid_size 41 --combine union
 # 2. local update
 #   option 1: numpy
 python -m numpy_impl.local_update_3d --params numpy_impl/params/local_update_3d_union.json
@@ -62,7 +58,7 @@ python -m numpy_impl.local_update_3d --params numpy_impl/params/local_update_3d_
 python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d_union.json
 ```
 
-For intersection, use `combine='intersection'` and `local_update_3d_intersection.json`.
+For intersection, use `--combine intersection` and `local_update_3d_intersection.json`.
 
 | Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Correction time: numpy / HeteroCL |
 |---|---|---|---|---|
@@ -73,13 +69,13 @@ The remaining points are all within 1e-5, except 4 points of numpy union: the lo
 
 ### Example: 6D Quadrotor
 
-State (x, y, vx, vy, θ, w), split into subsystems (x, vx, θ, w) and (y, vy, θ, w), which share θ, w and the controls. Union only: the obstacle x ≤ 0 or y ≤ 0 (avoid).
+State (x, y, vx, vy, θ, w), split into subsystems (x, vx, θ, w) and (y, vy, θ, w), which share θ, w and the controls. Union: the obstacle x ≤ 0 or y ≤ 0 (avoid). Intersection: the target x ≤ 0 and y ≤ 0 (reach).
 
 ```bash
 # small grid 9^6, with the direct computation (about 30 s)
 # 1. generate: results/result_{direct,decomp}_6d_union.npy, results/init_{1,2}_6d.npy
-python -m compute.direct_6d --grid_size 9
-python -m compute.decomposition_6d --grid_size 9
+python -m compute.direct_6d --grid_size 9 --combine union
+python -m compute.decomposition_6d --grid_size 9 --combine union
 # 2. local update
 #   option 1: numpy
 python -m numpy_impl.local_update_6d --params numpy_impl/params/local_update_6d_union.json
@@ -88,7 +84,7 @@ python -m hcl_impl.local_update_6d --params hcl_impl/params/local_update_6d_unio
 
 # default grid 21^6, without the direct computation (pure Python, would take hours)
 # 1. generate the decomposition only
-python -m compute.decomposition_6d --grid_size 21
+python -m compute.decomposition_6d --grid_size 21 --combine union
 # 2. local update, without the comparison
 #   option 1: numpy (about 23 min)
 python -m numpy_impl.local_update_6d --params numpy_impl/params/local_update_6d_union.json --true_file null
@@ -96,13 +92,18 @@ python -m numpy_impl.local_update_6d --params numpy_impl/params/local_update_6d_
 python -m hcl_impl.local_update_6d --params hcl_impl/params/local_update_6d_union.json --true_file null
 ```
 
+For intersection, use `--combine intersection` and `local_update_6d_intersection.json`.
+
 | Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Correction time: numpy / HeteroCL |
 |---|---|---|---|---|
 | 7⁶ | union | 5 | 74074 / 0 / 0 | 4.4 s / 0.057 s |
+| 7⁶ | intersection | 5 | 74074 / 0 / 0 | 4.3 s / 0.050 s |
 | 9⁶ | union | 5 | 286339 / 0 / 0 | 17 s / 0.20 s |
+| 9⁶ | intersection | 5 | 286339 / 0 / 0 | 17 s / 0.21 s |
 | 21⁶ | union | 5 | not computed (no direct computation) | 23 min / 35 s |
+| 21⁶ | intersection | 5 | not computed (no direct computation) | not run / 35 s |
 
-numpy and HeteroCL correct the same points, values within 9e-16 (at 21⁶: 87.9 million points changed, within 6e-17). At 21⁶ the decomposition takes about 35 s and the HeteroCL local update about 1 minute in total, each with a peak of 12 GB of memory. The decomposition file is 4.1 GB.
+Intersection has the same error counts as union because the two problems mirror each other (V → −V, x, y → −x, −y); the errors have the same sizes at different points. numpy and HeteroCL correct the same points, values within 2e-15 (at 21⁶: 87.9 million points changed, within 6e-17). At 21⁶ the decomposition takes about 35 s and the HeteroCL local update about 1 minute in total, each with a peak of 12 GB of memory. The decomposition file is 4.1 GB.
 
 ## Parameter Files
 
@@ -124,18 +125,18 @@ Each local update reads its arguments from a JSON file in `numpy_impl/params/` o
 | `--init_1`, `--init_2` | 3d, 6d | `results/init_{1,2}_<dim>.npy` | Subsystem values at t = 0 |
 | `--leaking_mode` | 3d, 6d | `smallest` | `smallest` or `delta` |
 
-Compute scripts (`compute/direct_2d.py`, `decomposition_2d.py`, `direct_6d.py`, `decomposition_6d.py`):
+Compute scripts (`compute/direct_<dim>.py`, `compute/decomposition_<dim>.py`), the same for every case:
 
 | Argument | Default | Description |
 |---|---|---|
-| `--grid_size` | 2d: `101`, 6d: `21` | Grid points per dimension |
-| `--combine` | 2d: `intersection`, 6d: `union` | `union` or `intersection` |
+| `--grid_size` | 2d: `101`, 3d: `41`, 6d: `21` | Grid points per dimension |
+| `--combine` | 2d: `intersection`, 3d/6d: `union` | `union` or `intersection` |
 | `--dynamics`, `--dynamics_params` | the case's system, `{}` | See [Dynamics](#dynamics) |
-| `--t_step` | `0.02` | Time step |
-| `--lookback_length` | 2d: `0.2`, 6d: `0.1` | Look-back length, `lookback_length / t_step` time steps |
+| `--t_step` | 2d/6d: `0.02`, 3d: `0.04` | Time step |
+| `--lookback_length` | 2d: `0.2`, 3d: `1.0`, 6d: `0.1` | Look-back length, `lookback_length / t_step` time steps |
 | `--results_dir` | `results` | Output folder |
 
-The 3d compute functions are Python functions: `direct_comp(num, combine=..., lookback_length=1.0, t_step=0.04, accuracy="low", plot=True)` and `decomposition(...)` with the same arguments.
+3d only: `--accuracy` (HJSolver accuracy, default `low`, which matches the local update scheme) and `--plot` (also save an interactive plot to `plots/`).
 
 ## Code Layout
 
@@ -150,6 +151,5 @@ The 3d compute functions are Python functions: `direct_comp(num, combine=..., lo
 
 ## Known Limitations
 
-- 6d intersection is not implemented.
 - The 6d direct computation is a pure Python loop, practical only for small grids (about 30 s for 9⁶).
 - `common/plotting.py` needs `pre_plot`, which the current optimized_dp no longer has. No script imports it.

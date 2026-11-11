@@ -206,14 +206,8 @@ def add_compute_args_2d(parser):
         Arguments of compute/direct_2d.py and compute/decomposition_2d.py. Use the same values for both,
         the local update reads the grid size and number of time steps from the saved files.
     '''
-    from dynamics import add_dynamics_args
-    parser.add_argument("--grid_size", type=int, default=101, help="Grid points per dimension, e.g. 101 for 101x101.")
-    parser.add_argument("--combine", choices=["union", "intersection"], default="intersection",
-                        help="union = min(V1, V2) with uMode max (avoid), intersection = max(V1, V2) with uMode min (reach).")
-    parser.add_argument("--t_step", type=float, default=0.02, help="Time step.")
-    parser.add_argument("--lookback_length", type=float, default=0.20, help="Look-back length, lookback_length / t_step time steps.")
-    parser.add_argument("--results_dir", default="results", help="Directory of the saved results.")
-    add_dynamics_args(parser, default="coupled_2d")
+    from common.params import add_compute_args
+    add_compute_args(parser, grid_size=101, combine="intersection", t_step=0.02, lookback_length=0.20, dynamics="coupled_2d")
 
 
 def config_from_compute_args_2d(parser, args):

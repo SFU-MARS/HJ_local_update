@@ -18,6 +18,7 @@ from odp.solver import HJSolver
 import time
 
 from common.combine import check_combine
+from dynamics import U_MODE
 from compute.config_6d import add_compute_args_6d, grid_6d, init_values_6d, result_files_6d
 
 
@@ -25,25 +26,26 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.02, combine="union"
     '''
         Direct computation of the 6D quadrotor, used as the ground truth. Pure Python loop over every
         grid point, so only small grids are practical (about 30 s for 9^6 with 5 time steps).
-            combine: "union" (only union is implemented for 6d)
+            combine: "union" (obstacle x <= 0 or y <= 0, V = min, avoid) or "intersection" (target
+                x <= 0 and y <= 0, V = max, reach)
             sys: full system dynamics, e.g. from dynamics.make_dynamics; None uses quadrotor with
-                 uTMax=1, utMax=1, uMode='max'
+                 uTMax=1, utMax=1, uMode from combine (union: max, intersection: min)
         Returns (grid, list of the value function at each time step).
     '''
-    check_combine(combine, ("union",), "6d")
+    check_combine(combine, ("union", "intersection"), "6d")
 
     # Create Grid
     g = grid_6d(num)
 
-    ## Initialize value function: union of the half spaces x <= 0 and y <= 0
+    ## Initialize value function: union (min) or intersection (max) of the half spaces x <= 0 and y <= 0
     data1, data2 = init_values_6d(num)
-    data = np.minimum(data1, data2)
+    data = np.minimum(data1, data2) if combine == "union" else np.maximum(data1, data2)
 
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
     if sys is None:
-        sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
+        sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode=U_MODE[combine], dMode='min')
 
 
     '''
@@ -133,7 +135,7 @@ def main():
     add_compute_args_6d(parser)
     args = parser.parse_args()
     try:
-        check_combine(args.combine, ("union",), "6d")
+        check_combine(args.combine, ("union", "intersection"), "6d")
         sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=6)
     except (ValueError, TypeError, NotImplementedError) as e:
         parser.error(str(e))

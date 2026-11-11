@@ -49,3 +49,20 @@ def json_object(value):
     if not isinstance(obj, dict):
         raise ValueError(f"must be a JSON object like {{\"v\": 1}}, got {value!r}")
     return obj
+
+
+def add_compute_args(parser, grid_size, combine, t_step, lookback_length, dynamics):
+    '''
+        Arguments of the compute scripts (compute/direct_<dim>.py, compute/decomposition_<dim>.py), the same
+        for every case, only the defaults differ. Use the same values for the direct computation and the
+        decomposition; the local update reads the grid size and number of time steps from the saved files.
+    '''
+    from dynamics import add_dynamics_args
+    parser.add_argument("--grid_size", type=int, default=grid_size, help=f"Grid points per dimension (default {grid_size}).")
+    parser.add_argument("--combine", choices=["union", "intersection"], default=combine,
+                        help="union = min(V1, V2) with uMode max (avoid), intersection = max(V1, V2) with uMode min (reach).")
+    parser.add_argument("--t_step", type=float, default=t_step, help="Time step.")
+    parser.add_argument("--lookback_length", type=float, default=lookback_length,
+                        help="Look-back length, lookback_length / t_step time steps.")
+    parser.add_argument("--results_dir", default="results", help="Directory of the saved results.")
+    add_dynamics_args(parser, default=dynamics)

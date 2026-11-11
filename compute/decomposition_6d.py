@@ -15,18 +15,19 @@ import time
 import os
 
 from common.combine import check_combine
+from dynamics import U_MODE
 from compute.config_6d import add_compute_args_6d, grid_sub_6d, result_files_6d
 
 def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="union", subsystems=None, t_step=0.02):
     '''
         Decomposition of the 6D quadrotor into two 4D subsystems, subsystem 1 (x, vx, theta, w) and
-        subsystem 2 (y, vy, theta, w), combined as min(V1, V2).
-            combine: "union" (only union is implemented for 6d)
+        subsystem 2 (y, vy, theta, w), combined as min(V1, V2) (union) or max(V1, V2) (intersection).
+            combine: "union" (avoid, uMode max) or "intersection" (reach, uMode min)
             subsystems: (subsystem 1, subsystem 2) dynamics, e.g. from dynamics.make_subdynamics;
-                None uses subsys_1, subsys_2 with uTMax=1, utMax=1, uMode='max'
+                None uses subsys_1, subsys_2 with uTMax=1, utMax=1, uMode from combine
         Returns (V, V1, V2) on the 6D grid, time as the first axis.
     '''
-    check_combine(combine, ("union",), "6d")
+    check_combine(combine, ("union", "intersection"), "6d")
     # Create Grid of the subsystems
     g = grid_sub_6d(num)
     
@@ -50,8 +51,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="unio
     
     # Set system dynamics
     if subsystems is None:
-        sys_1 = subsys_1(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
-        sys_2 = subsys_2(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
+        sys_1 = subsys_1(uTMax=1, utMax=1, dMax=0.0, uMode=U_MODE[combine], dMode='min')
+        sys_2 = subsys_2(uTMax=1, utMax=1, dMax=0.0, uMode=U_MODE[combine], dMode='min')
     else:
         sys_1, sys_2 = subsystems
     
@@ -177,7 +178,7 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="unio
         print(result_lower_expand.shape)
         result_lower = np.transpose(result_lower_expand, (0,2,1,3,4,5))
 
-        result_full = np.minimum(result_upper, result_lower)   
+        result_full = np.minimum(result_upper, result_lower) if combine == "union" else np.maximum(result_upper, result_lower)
         
     else:
         
@@ -193,7 +194,7 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="unio
         result_lower = np.transpose(result_lower_expand, (2, 0, 3, 1, 4, 5, 6))
         # print(result_lower.shape)
 
-        result_full = np.minimum(result_upper, result_lower)
+        result_full = np.minimum(result_upper, result_lower) if combine == "union" else np.maximum(result_upper, result_lower)
         
         # print('Decomposition Correct')
         
@@ -208,7 +209,7 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.02, combine="unio
 def main():
     '''
         Run the 6d decomposition and save
-            results/result_decomp_6d_<combine>.npy: V = min(V1, V2), shape (x, y, vx, vy, theta, w, t)
+            results/result_decomp_6d_<combine>.npy: V = min(V1, V2) or max(V1, V2), shape (x, y, vx, vy, theta, w, t)
             results/init_1_6d.npy, results/init_2_6d.npy: V1, V2 at t = 0 on the 6D grid, used for the leaking set
     '''
     from dynamics import make_subdynamics
@@ -216,7 +217,7 @@ def main():
     add_compute_args_6d(parser)
     args = parser.parse_args()
     try:
-        check_combine(args.combine, ("union",), "6d")
+        check_combine(args.combine, ("union", "intersection"), "6d")
         subsystems = make_subdynamics(args.dynamics, args.dynamics_params, args.combine, dim=6)
     except (ValueError, TypeError, NotImplementedError) as e:
         parser.error(str(e))

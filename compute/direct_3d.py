@@ -20,7 +20,7 @@ from dynamics import U_MODE
 
 def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
                 obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="low", plot=True,
-                combine="union"):
+                combine="union", v=1, wMax=1, results_dir="results"):
     r'''
         Directly solve the 3D Dubins car
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{theta} = w
@@ -29,7 +29,8 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
             combine="union": obstacle = union of the rectangles, V = min(V1, V2), control avoids it (uMode='max')
             combine="intersection": target = intersection of the rectangles (a square), V = max(V1, V2),
                 control reaches it (uMode='min')
-        Saves results/result_direct_3d_<combine>.npy.
+            v, wMax: speed and turn rate bound of the Dubins car
+        Saves <results_dir>/result_direct_3d_<combine>.npy.
     '''
     check_combine(combine, ("union", "intersection"), "3d")
 
@@ -50,7 +51,7 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
     # Set system dynamics: union avoids the obstacle (uMode max), intersection reaches the target (uMode min)
-    sys = DubinsCar(wMax=1, speed=1, uMode=U_MODE[combine], dMode="min")
+    sys = DubinsCar(wMax=wMax, speed=v, uMode=U_MODE[combine], dMode="min")
 
     # Same computation method as decomposition_3d.py
     compMethods = {"TargetSetMode": "None"}
@@ -69,8 +70,9 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     print("Total kernel time direct computation: ", execution_time)
     print("Finished updating the value function")
 
-    os.makedirs('results', exist_ok=True)
-    np.save(f'results/result_direct_3d_{combine}.npy', result)
+    os.makedirs(results_dir, exist_ok=True)
+    np.save(f'{results_dir}/result_direct_3d_{combine}.npy', result)
+    print(f"Saved {results_dir}/result_direct_3d_{combine}.npy")
 
     # Visualization of 3D value function
     if plot:
@@ -82,5 +84,27 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     return g, result
 
 
+def main():
+    '''
+        Command-line version, same arguments as the 2d and 6d compute scripts (common/params.add_compute_args).
+    '''
+    import argparse
+    from common.params import add_compute_args
+    from dynamics import make_dynamics
+    parser = argparse.ArgumentParser()
+    add_compute_args(parser, grid_size=41, combine="union", t_step=0.04, lookback_length=1.0, dynamics="dubins_3d")
+    parser.add_argument("--accuracy", default="low", help="HJSolver accuracy, 'low' matches the local update scheme.")
+    parser.add_argument("--plot", action="store_true", help="Also save an interactive plot to plots/.")
+    args = parser.parse_args()
+    try:
+        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=3)
+    except (ValueError, TypeError) as e:
+        parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
+    print(f"Dynamics: {args.dynamics} {vars(sys)}")
+    direct_comp(args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length, t_step=args.t_step,
+         accuracy=args.accuracy, plot=args.plot, combine=args.combine, v=sys.v, wMax=sys.wMax,
+         results_dir=args.results_dir)
+
+
 if __name__ == "__main__":
-    direct_comp(41, saveAllTimeStep=True, lookback_length=1.0)
+    main()
