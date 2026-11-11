@@ -9,9 +9,9 @@ A decomposition approximates a full Hamilton-Jacobi value function by combining 
 
 ## Workflow
 
-1. **Generate** the direct computation (ground truth) and the decomposition with `compute/`. In every case both are solved with optimized_dp's HJSolver: the direct computation solves the full system (2D, 3D or 6D), and the decomposition solves each subsystem (1D for 2d, 2D for 3d, 4D for 6d) and combines them. HJSolver runs with `accuracy="low"` (1st order ENO + forward Euler) and exactly one step per time step; if `--t_step` is above its CFL bound, the scripts stop with an error. The results are saved to `results/` in 32-bit floats (as HJSolver computes them), with time as the last axis. The direct computation is optional: it is only used for the comparison in step 3.
+1. **Generate** the direct computation (ground truth) and the decomposition with `compute/`. In every case both are solved with optimized_dp's HJSolver: the direct computation solves the full system (2D, 3D or 6D), and the decomposition solves each subsystem (1D for 2d, 2D for 3d, 4D for 6d) and combines them. HJSolver runs with `accuracy="low"` (1st order ENO + forward Euler) and exactly one step per time step; if `--t_step` is above its CFL bound, the scripts stop with an error. The results are saved to `results/` in 32-bit floats (as HJSolver computes them): the direct computation with time as the last axis, shape `(x, y, …, t)` (as HJSolver returns it), and the decomposition with time as the first axis, shape `(t, x, y, …)`, so the local update can read it without reordering. The direct computation is optional: it is only used for the comparison in step 3.
 2. **Local update** with `numpy_impl/` or `hcl_impl/` (HeteroCL, much faster), from a parameter file in its `params/` folder. Every case uses the same growing-region method (`growing_region.py`): the leaking set comes from the subsystem values at t = 0 (V1 = V2 and its neighbours), and at each time step the region is that set plus the points corrected at the previous step and their neighbours. With `grow_within_step` (on for 2d), the region also grows within each step until no new point changes. At each updated point it takes the same step as HJSolver, including the Lax-Friedrichs dissipation, in 32-bit floats (`common/hj_update.py`).
-3. **Results** are saved to `results/result_local_<dim>_<combine>.npy` (numpy) or `results/result_local_hcl_<dim>_<combine>.npy` (HeteroCL). If `true_file` (the direct computation result) is given, the local update also prints the error against it. It can be `null`, set `"true_file": null` in the parameter file or add `--true_file null`, and then the local update runs without the comparison. The HeteroCL version saves its compiled kernel in `kernels/` and loads it on later runs.
+3. **Results** are saved to `results/result_local_<dim>_<combine>.npy` (numpy) or `results/result_local_hcl_<dim>_<combine>.npy` (HeteroCL), time as the first axis like the decomposition. If `true_file` (the direct computation result) is given, the local update also prints the error against it at the final time; the direct computation result is only used for this comparison, never by the local update. It can be `null`, set `"true_file": null` in the parameter file or add `--true_file null`, and then the local update runs without the comparison. The HeteroCL version saves its compiled kernel in `kernels/` and loads it on later runs.
 
 In the tables below, times are the time-stepping loops only, measured on a machine with 32 logical CPUs: HJSolver's "Total kernel time" for the direct computation and the decomposition (summed over the subsystems), and the correction loop for the local update. Kernel builds are not included: each HJSolver call builds its kernel first (about 0.1–0.4 s more), and the HeteroCL local update times are from a second run, which loads the kernel saved by the first. The input copies before the loop are not included either.
 
@@ -78,7 +78,7 @@ python -m compute.decomposition_6d --grid_size 21 --combine union
 # 2. local update
 #   option 1: numpy (small grids only, e.g. --grid_size 9)
 python -m numpy_impl.local_update_6d --params numpy_impl/params/local_update_6d_union.json
-#   option 2: parallel HeteroCL (about 10 s in total, under 1 s of it the local update)
+#   option 2: parallel HeteroCL (about 8 s in total with the comparison, under 1 s of it the local update)
 python -m hcl_impl.local_update_6d --params hcl_impl/params/local_update_6d_union.json
 ```
 
@@ -95,7 +95,7 @@ For intersection, use `--combine intersection` and `local_update_6d_intersection
 | 21⁶ | union | 10 | 26250708 / – / 0 | 10.8 s | 0.12 s | – / 0.82 s |
 | 21⁶ | intersection | 10 | 26200126 / – / 0 | 10.9 s | 0.13 s | – / 0.87 s |
 
-All points are within 1e-6 of the direct computation (32-bit rounding), and numpy and HeteroCL are within 4.8e-7 of each other. numpy is not run at 21⁶. At 21⁶ (85.8 million points) each result file is 3.8 GB. The local update recomputes 28% of the point updates of the direct computation (239 of 858 million over the 10 steps); the whole HeteroCL script takes about 9–12 s and 7.6 GB: about 1.4 s reading the decomposition file into HeteroCL, under 1 s for the local update, 4–8 s writing the 3.8 GB result (depends on the disk), the rest setup. The HeteroCL version corrects the decomposition result in place, so it only writes the updated points.
+All points are within 1e-6 of the direct computation (32-bit rounding), and numpy and HeteroCL are within 4.8e-7 of each other. numpy is not run at 21⁶. At 21⁶ (85.8 million points) each result file is 3.8 GB. The local update recomputes 28% of the point updates of the direct computation (239 of 858 million over the 10 steps); the whole HeteroCL script takes about 7 s and 5.2 GB: about 2 s reading the decomposition file and setting up the HeteroCL arrays, under 1 s for the local update, 2.8 s writing the 3.8 GB result. The comparison with the direct computation adds about 1.4 s (8.8 GB peak). The HeteroCL version corrects the decomposition result in place, so it only writes the updated points.
 
 ## Parameter Files
 
@@ -138,7 +138,7 @@ Compute scripts (`compute/direct_<dim>.py`, `compute/decomposition_<dim>.py`), t
     hcl_impl/      HeteroCL local updates: local_update_{2d,3d,6d}.py, growing_region.py, kernel_cache.py, params/
     common/        shared code: local update arguments and setup (local_update_setup.py), HJSolver step and spatial
                    derivative (hj_update.py, spatial_deriv.py), leaking set, statistics, parameter files, union/intersection,
-                   fast reading/writing of the large result files (npy_io.py)
+                   reading the large decomposition file straight into HeteroCL (npy_io.py)
     results/       saved results (not in git)
     kernels/       compiled HeteroCL kernels (not in git)
 

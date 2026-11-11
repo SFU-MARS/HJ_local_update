@@ -39,7 +39,7 @@ def decomposition(num, subsystem, lookback_length=0.2, combine="intersection", t
 def main():
     '''
         Run the 2d decomposition and save
-            results/result_decomp_2d_<combine>.npy: V = min(V1, V2) or max(V1, V2), shape (x, y, t)
+            results/result_decomp_2d_<combine>.npy: V = min(V1, V2) or max(V1, V2), shape (t, x, y)
             results/init_1_2d.npy, results/init_2_2d.npy: V1, V2 at t = 0 on the 2D grid, used for the leaking set
     '''
     from dynamics import make_subdynamics
@@ -59,7 +59,7 @@ def main():
         parser.error(str(e))
     os.makedirs(args.results_dir, exist_ok=True)
     files = result_files_2d(args.combine, args.results_dir)
-    np.save(files["decomp"], np.moveaxis(result_full, 0, -1))
+    np.save(files["decomp"], result_full)
     np.save(files["init_1"], result_upper[0])
     np.save(files["init_2"], result_lower[0])
     for key in ("decomp", "init_1", "init_2"):

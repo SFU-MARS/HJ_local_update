@@ -38,11 +38,12 @@ def add_local_update_args(parser, case, hcl=False):
                         help=f"JSON parameter file (see {folder}/params/), its keys are the argument names below "
                         "without '--'. Arguments given on the command line override the file.")
     parser.add_argument("--decomp_file", default=None,
-                        help=f"npy file of the decomposition result, shape {case['axes'][:-1]}, t). "
-                        "Required, on the command line or in --params.")
+                        help=f"npy file of the decomposition result, shape (t, {case['axes'][1:]} (time as the first "
+                        "axis). Required, on the command line or in --params.")
     parser.add_argument("--true_file", default=None,
-                        help="Optional npy file of the direct computation result, same shape as --decomp_file. "
-                        "If not given (or null), the local update runs without the comparison.")
+                        help=f"Optional npy file of the direct computation result, shape {case['axes'][:-1]}, t) "
+                        "(time as the last axis, as compute/direct_<dim>.py saves it), only used for the comparison "
+                        "after the local update. If not given (or null), the local update runs without the comparison.")
     parser.add_argument("--init_1", default=f"results/init_1_{name}.npy",
                         help=f"npy file of the subsystem 1 initial value V1 on the full grid {case['axes']}, "
                         f"saved by compute/decomposition_{name}.py.")
@@ -86,19 +87,22 @@ def setup_local_update(parser, case, hcl=False):
     for path in (args.decomp_file, args.true_file, args.init_1, args.init_2):
         if path is not None and not os.path.isfile(path):
             parser.error(f"file not found: {path}")
+    # Decomposition result: time as the first axis, (t, grid ...)
     decomp = np.load(args.decomp_file, mmap_mode='r')
     if decomp.ndim != dim + 1:
-        parser.error(f"{args.decomp_file} must have shape {case['axes'][:-1]}, t), got {decomp.shape}")
+        parser.error(f"{args.decomp_file} must have shape (t, {case['axes'][1:]}, got {decomp.shape}")
+    grid_shape, num_steps = decomp.shape[1:], decomp.shape[0]
     if args.true_file is not None:
+        # Direct computation result: time as the last axis, (grid ..., t)
         true_shape = np.load(args.true_file, mmap_mode='r').shape
-        if decomp.shape != true_shape:
-            parser.error(f"shape mismatch: {args.decomp_file} {decomp.shape} vs {args.true_file} {true_shape}, "
-                         "generate both with the same grid_size, t_step and lookback_length")
+        if true_shape != grid_shape + (num_steps,):
+            parser.error(f"shape mismatch: {args.true_file} {true_shape} (grid, t) vs {args.decomp_file} "
+                         f"{decomp.shape} (t, grid), generate both with the same grid_size, t_step and lookback_length")
     data_init_upper = np.load(args.init_1)
     data_init_lower = np.load(args.init_2)
     for path, data in ((args.init_1, data_init_upper), (args.init_2, data_init_lower)):
-        if data.shape != decomp.shape[:-1]:
-            parser.error(f"shape mismatch: {path} {data.shape} vs {args.decomp_file} {decomp.shape[:-1]} (without t), "
+        if data.shape != grid_shape:
+            parser.error(f"shape mismatch: {path} {data.shape} vs {args.decomp_file} {grid_shape} (without t), "
                          f"generate them with the same compute/decomposition_{name}.py run")
 
     # Dynamics (--dynamics, --dynamics_params), use the same as the files
@@ -109,9 +113,9 @@ def setup_local_update(parser, case, hcl=False):
     print(f"Dynamics: {args.dynamics} {vars(sys)}")
 
     # Grid with the grid size read from the decomposition file
-    num = decomp.shape[0]
+    num = grid_shape[0]
     grid = case["grid"](num)
-    print(f"Grid size: {num}^{dim}, time steps: {decomp.shape[-1] - 1}, combine: {args.combine}, "
+    print(f"Grid size: {num}^{dim}, time steps: {num_steps - 1}, combine: {args.combine}, "
           f"grow_within_step: {args.grow_within_step}")
 
     # Initial leaking set from the subsystem initial values (--init_1, --init_2)
@@ -121,18 +125,18 @@ def setup_local_update(parser, case, hcl=False):
 
 def save_and_compare(args, result_local, name, hcl=False):
     '''
-        Save the local update result to results/result_local[_hcl]_<name>_<combine>.npy and, if --true_file
-        is given, compare the decomposition and the local update with the direct computation.
+        Save the local update result (time as the first axis, like the decomposition) to
+        results/result_local[_hcl]_<name>_<combine>.npy and, if --true_file is given, compare the decomposition and
+        the local update with the direct computation (time as the last axis) at the final time step.
     '''
-    from common.npy_io import save_npy
     from common.stats import printCorrectnessStatistics
     os.makedirs("results", exist_ok=True)
     path = f"results/result_local{'_hcl' if hcl else ''}_{name}_{args.combine}.npy"
     start = time.time()
-    save_npy(path, result_local)
+    np.save(path, np.asarray(result_local))
     print(f"Saved {path} in {time.time() - start:.2f} seconds")
     if args.true_file is not None:
-        printCorrectnessStatistics(np.load(args.true_file, mmap_mode='r'), np.load(args.decomp_file, mmap_mode='r'),
-                                   result_local)
+        printCorrectnessStatistics(np.load(args.true_file, mmap_mode='r')[..., -1],
+                                   np.load(args.decomp_file, mmap_mode='r')[-1], result_local[-1])
     else:
         print("No --true_file given, skipping the comparison with the direct computation")

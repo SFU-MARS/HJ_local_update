@@ -1,6 +1,6 @@
 # Decomposition of the 3D Dubins car into two 2D subsystems solved with HJSolver,
 # combined as V = min(V1, V2) (union) or max(V1, V2) (intersection).
-# Saves results/result_decomp_3d_<combine>.npy, same shape as direct_3d.py,
+# Saves results/result_decomp_3d_<combine>.npy, shape (t, x, y, theta) (time as the first axis, index 0 is t = 0),
 # and the subsystem initial values results/init_1_3d.npy, results/init_2_3d.npy, shape (x, y, theta).
 import numpy as np
 import math
@@ -121,7 +121,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     print("Total kernel time decomposition: ", execution_time)
     print("Finished updating the value function")
 
-    np.save(f'{results_dir}/result_decomp_3d_{combine}.npy', result_full)
+    # Saved with time as the first axis, as the local updates read it
+    np.save(f'{results_dir}/result_decomp_3d_{combine}.npy', np.ascontiguousarray(np.moveaxis(result_full, -1, 0)))
     for name in (f"result_decomp_3d_{combine}.npy", "init_1_3d.npy", "init_2_3d.npy"):
         print(f"Saved {results_dir}/{name}")
 

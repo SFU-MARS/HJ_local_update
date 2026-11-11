@@ -30,11 +30,12 @@ def get_leaking_set(data_init_upper, data_init_lower, result_decomp, grid, mode=
                 dilate(|V1 - V2| < 1e-9). Smallest set that gives the full correction, no tuning.
             mode="delta": |V1 - V2| < delta, with delta = max|initial value - final
                 decomposition result| (new_theory_L below). Conservative, larger set.
+            result_decomp: decomposition result with time as the first axis (only used by mode="delta")
     '''
     if mode == "smallest":
         leaking = dilate(abs(data_init_upper - data_init_lower) < 1e-9, grid)
     elif mode == "delta":
-        delta = np.max(abs(result_decomp[..., 0] - result_decomp[..., -1]))
+        delta = np.max(abs(result_decomp[0] - result_decomp[-1]))
         print('The delta value is', delta)
         leaking = abs(data_init_upper - data_init_lower) < delta
     else:

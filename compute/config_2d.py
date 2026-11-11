@@ -53,7 +53,8 @@ def add_compute_args_2d(parser):
 def result_files_2d(combine, results_dir="results"):
     '''
         Names of the saved 2d results:
-            direct, decomp: shape (x, y, t), index 0 of the last axis is t = 0
+            direct: shape (x, y, t), time as the last axis (as HJSolver returns it), index 0 is t = 0
+            decomp: shape (t, x, y), time as the first axis (as the local updates read it), index 0 is t = 0
             init_1, init_2: subsystem initial values V1, V2 on the 2D grid, shape (x, y)
     '''
     return {

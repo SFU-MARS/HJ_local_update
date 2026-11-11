@@ -10,7 +10,7 @@ from heterocl import tvm
 import numpy as np
 
 from common import hj_update, spatial_deriv
-from common.npy_io import read_time_first
+from common.npy_io import read_npy_into
 from common.hj_update import DTYPE, DTYPE_HCL, abs_hcl, deriv_bounds_hcl, for_all_points, value_change_hcl
 from hcl_impl.kernel_cache import load_or_build_kernel
 
@@ -225,7 +225,7 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshol
                                grow_within_step=False):
     '''
         Growing-region local update of a saved decomposition result, each time step runs in one HeteroCL kernel call.
-            decomp_file: npy file of the decomposition result, grid axes then time, index 0 of the last axis is t = 0
+            decomp_file: npy file of the decomposition result, time as the first axis (t, grid ...), index 0 is t = 0
             leaking: boolean mask of the initial leaking set, see get_leaking_set in common/leaking.py
             grid: odp Grid of the full system
             sys: dynamics with HeteroCL methods opt_ctrl, dynamics and dissipation_coeffs (see dynamics/__init__.py)
@@ -234,12 +234,12 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshol
             cache_dir: directory of the compiled kernels (see hcl_impl/kernel_cache.py)
             grow_within_step: grow the region within each time step until no new point is updated
                               (see numpy_impl/growing_region.py)
-        Returns the corrected value function, same shape as the decomposition result (a view of the HeteroCL
-        array, time as the first axis in memory).
+        Returns the corrected value function, same shape as the decomposition result (time as the first axis; a
+        numpy view of the HeteroCL array).
     '''
     file_shape = np.load(decomp_file, mmap_mode='r').shape
-    num_steps = file_shape[-1]
-    shape = file_shape[:-1]
+    num_steps = file_shape[0]
+    shape = file_shape[1:]
     dims = len(shape)
 
     # Step 1: build (or load the cached) HeteroCL kernel
@@ -252,10 +252,10 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshol
                                        key, f"local_update_{dims}d", cache_dir)
     print(f"HeteroCL kernel {how} in {time.time() - total_start:.4f} seconds")
 
-    # Step 2: the inputs as HeteroCL arrays. The decomposition result is read from the file (time as the last
-    # axis) straight into V (time as the first axis), which the kernel then corrects in place
+    # Step 2: the inputs as HeteroCL arrays. The decomposition result is read from the file straight into V
+    # (both with time as the first axis), which the kernel then corrects in place
     V, V_view = hcl_empty((num_steps,) + shape, DTYPE)
-    read_time_first(decomp_file, V_view)
+    read_npy_into(decomp_file, V_view)
     xs = [hcl.asarray(np.reshape(grid.vs[d], grid.pts_each_dim[d]).astype(DTYPE), dtype=DTYPE_HCL) for d in range(dims)]
     t_step_hcl = hcl.asarray(np.array([t_step], dtype=DTYPE), dtype=DTYPE_HCL)
     marks = np.where(leaking, LEAKING, 0).astype(np.int32)
@@ -281,4 +281,4 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshol
     total_sweeps = (num_steps - 1) + int(sweeps.asnumpy()[0])
     print(f"Total point updates: {total_updated} / {int(np.prod(shape)) * (num_steps - 1)}, sweeps: {total_sweeps}")
 
-    return np.moveaxis(V_view, 0, -1)
+    return V_view

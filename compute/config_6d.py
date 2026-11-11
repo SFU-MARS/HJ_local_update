@@ -48,7 +48,8 @@ def add_compute_args_6d(parser):
 def result_files_6d(combine, results_dir="results"):
     '''
         Names of the saved 6d results:
-            direct, decomp: shape (x, y, vx, vy, theta, w, t), index 0 of the last axis is t = 0
+            direct: shape (x, y, vx, vy, theta, w, t), time as the last axis (as HJSolver returns it), index 0 is t = 0
+            decomp: shape (t, x, y, vx, vy, theta, w), time as the first axis (as the local updates read it), index 0 is t = 0
             init_1, init_2: subsystem initial values V1, V2 on the 6D grid, shape (x, y, vx, vy, theta, w)
     '''
     return {

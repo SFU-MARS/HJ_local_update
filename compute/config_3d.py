@@ -21,7 +21,8 @@ def grid_3d(num):
 def result_files_3d(combine, results_dir="results"):
     '''
         Names of the saved 3d results:
-            direct, decomp: shape (x, y, theta, t), index 0 of the last axis is t = 0
+            direct: shape (x, y, theta, t), time as the last axis (as HJSolver returns it), index 0 is t = 0
+            decomp: shape (t, x, y, theta), time as the first axis (as the local updates read it), index 0 is t = 0
             init_1, init_2: subsystem initial values V1, V2 on the 3D grid, shape (x, y, theta)
     '''
     return {
