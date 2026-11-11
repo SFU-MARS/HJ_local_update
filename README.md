@@ -54,7 +54,7 @@ Every local update takes the dynamics as input, on the command line or in its pa
 ```bash
 python -m compute.direct_2d --grid_size 101 --combine union --dynamics_params '{"uMax": 1.5}'
 python -m compute.decomposition_2d --grid_size 101 --combine union --dynamics_params '{"uMax": 1.5}'
-python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d.json --dynamics_params '{"uMax": 1.5}'
+python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d_union.json --dynamics_params '{"uMax": 1.5}'
 ```
 
 - The control mode follows `--combine`: union = avoid (`uMode` `max`), intersection = reach (`uMode` `min`). So `uMode` is not a parameter, and `dMode` defaults to `min`.
@@ -92,14 +92,14 @@ For intersection, run the same with `combine='intersection'`. This saves to `res
 Then run the local update with a parameter file, numpy version:
 
 ```bash
-python -m numpy_impl.local_update_3d --params numpy_impl/params/local_update_3d.json
+python -m numpy_impl.local_update_3d --params numpy_impl/params/local_update_3d_union.json
 python -m numpy_impl.local_update_3d --params numpy_impl/params/local_update_3d_intersection.json
 ```
 
 or the parallel HeteroCL version:
 
 ```bash
-python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d.json
+python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d_union.json
 python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d_intersection.json
 ```
 
@@ -109,8 +109,8 @@ The results are saved to `results/result_local_3d_<combine>.npy` (numpy) and `re
 
 Each implementation keeps its parameter files next to its scripts, one per setting:
 
-- [numpy_impl/params/local_update_3d.json](numpy_impl/params/local_update_3d.json), [numpy_impl/params/local_update_3d_intersection.json](numpy_impl/params/local_update_3d_intersection.json)
-- [hcl_impl/params/local_update_3d.json](hcl_impl/params/local_update_3d.json), [hcl_impl/params/local_update_3d_intersection.json](hcl_impl/params/local_update_3d_intersection.json)
+- [numpy_impl/params/local_update_3d_union.json](numpy_impl/params/local_update_3d_union.json), [numpy_impl/params/local_update_3d_intersection.json](numpy_impl/params/local_update_3d_intersection.json)
+- [hcl_impl/params/local_update_3d_union.json](hcl_impl/params/local_update_3d_union.json), [hcl_impl/params/local_update_3d_intersection.json](hcl_impl/params/local_update_3d_intersection.json)
 
 Each key is an argument from the table below without `--`, for example:
 
@@ -129,7 +129,7 @@ Each key is an argument from the table below without `--`, for example:
 Keys left out of the file take their default value, and `"true_file": null` skips the comparison. An unknown key or an invalid `combine` or `leaking_mode` stops the script with an error. To try another setting, copy a parameter file and edit it. Arguments given on the command line override the file:
 
 ```bash
-python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d.json --leaking_mode delta
+python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d_union.json --leaking_mode delta
 ```
 
 All arguments can also be given on the command line alone, without `--params`.
@@ -213,16 +213,18 @@ This saves to `results/`, all with shape (x, y, t), index 0 of the last axis is 
 Then run the local update with a parameter file, numpy version:
 
 ```bash
-python -m numpy_impl.local_update_2d --params numpy_impl/params/local_update_2d.json
+python -m numpy_impl.local_update_2d --params numpy_impl/params/local_update_2d_union.json
+python -m numpy_impl.local_update_2d --params numpy_impl/params/local_update_2d_intersection.json
 ```
 
 or the HeteroCL version:
 
 ```bash
-python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d.json
+python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d_union.json
+python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d_intersection.json
 ```
 
-The parameter files ([numpy_impl/params/local_update_2d.json](numpy_impl/params/local_update_2d.json), [hcl_impl/params/local_update_2d.json](hcl_impl/params/local_update_2d.json)) point to the union files. For intersection, generate the intersection files and change `_union` to `_intersection` and `"combine"` to `"intersection"` in a copy of the parameter file. The grid size and number of time steps come from the files. The results are saved to `results/result_local_2d_<combine>.npy` (numpy) and `results/result_local_hcl_2d_<combine>.npy` (HeteroCL), shape (x, y, t).
+For intersection, generate the files with `--combine intersection` and use `local_update_2d_intersection.json` instead. Each implementation keeps one parameter file per setting: [numpy_impl/params/local_update_2d_union.json](numpy_impl/params/local_update_2d_union.json), [numpy_impl/params/local_update_2d_intersection.json](numpy_impl/params/local_update_2d_intersection.json), [hcl_impl/params/local_update_2d_union.json](hcl_impl/params/local_update_2d_union.json), [hcl_impl/params/local_update_2d_intersection.json](hcl_impl/params/local_update_2d_intersection.json). The grid size and number of time steps come from the files. The results are saved to `results/result_local_2d_<combine>.npy` (numpy) and `results/result_local_hcl_2d_<combine>.npy` (HeteroCL), shape (x, y, t).
 
 Both versions correct the same points at every time step: the leaking corners |V1 − V2| < δ, plus the neighbours of every corrected point that changed by more than 1e-6, repeated until no new point joins. The HeteroCL version does this in one kernel per time step, with 64-bit floats like numpy. Its values agree with numpy within 5e-16, since the compiled arithmetic rounds a little differently in the last bit. It saves the compiled kernel in `kernels/` on the first run and loads it on later runs.
 

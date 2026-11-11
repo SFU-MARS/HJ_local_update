@@ -1,0 +1,13 @@
+{
+    "decomp_file": "results/result_decomp_2d_intersection.npy",
+    "sub1_file": "results/result_sub1_2d_intersection.npy",
+    "sub2_file": "results/result_sub2_2d_intersection.npy",
+    "true_file": "results/result_direct_2d_intersection.npy",
+    "combine": "intersection",
+    "dynamics": "coupled_2d",
+    "dynamics_params": {"uMax": 1},
+    "t_step": 0.02,
+    "generate_big_delta": 2,
+    "big_delta": 0.2,
+    "debug": 0
+}

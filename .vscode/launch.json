@@ -9,7 +9,7 @@
       "type": "debugpy",
       "request": "launch",
       "module": "numpy_impl.local_update_3d",
-      "args": ["--params", "numpy_impl/params/local_update_3d.json"],
+      "args": ["--params", "numpy_impl/params/local_update_3d_union.json"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal"
     },
@@ -18,7 +18,7 @@
       "type": "debugpy",
       "request": "launch",
       "module": "hcl_impl.local_update_3d",
-      "args": ["--params", "hcl_impl/params/local_update_3d.json"],
+      "args": ["--params", "hcl_impl/params/local_update_3d_union.json"],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal"
     }
