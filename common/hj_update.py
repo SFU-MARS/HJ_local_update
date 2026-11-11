@@ -2,6 +2,10 @@
 # 1st order ENO derivatives (extrapolated at the grid edge), Hamiltonian with the optimal control,
 # Lax-Friedrichs dissipation, forward Euler. numpy and HeteroCL versions.
 #
+# Like HJSolver, every local update works in 32-bit floats: DTYPE (numpy) and DTYPE_HCL (HeteroCL).
+# The numpy version rounds every intermediate result to 32 bits, since numpy turns a 32-bit scalar
+# combined with a Python float into a 64-bit one.
+#
 # HJSolver takes the dissipation coefficients from the optimal control at the global min and max spatial
 # derivatives (over the whole grid). For dynamics whose coefficients depend on them
 # (DISSIPATION_USES_DERIV_BOUNDS, e.g. couple_u), the local update computes these bounds from the full
@@ -10,6 +14,16 @@ import heterocl as hcl
 import numpy as np
 
 from common.spatial_deriv import spa_deriv, spa_deriv_arrays, spa_deriv_hcl
+
+DTYPE = np.float32
+DTYPE_HCL = hcl.Float(32)
+
+
+def abs_hcl(x):
+    '''
+        |x| inside a HeteroCL kernel, with the type of x (odp's my_abs goes through a scalar of the default type).
+    '''
+    return hcl.select(x > 0, x, -x)
 
 
 def deriv_bounds_numpy(data, grid):
@@ -28,28 +42,31 @@ def deriv_bounds_numpy(data, grid):
 def value_change_numpy(data, index, grid, sys, t, t_step, state_values, deriv_min=None, deriv_max=None):
     '''
         Value change of one HJSolver step at index (numpy).
+            data: DTYPE array
             state_values: list of the grid coordinates of each dimension
             deriv_min, deriv_max: from deriv_bounds_numpy, needed if sys.DISSIPATION_USES_DERIV_BOUNDS
+        Returns a DTYPE scalar.
     '''
+    f = DTYPE
     dims = len(index)
     left, right, grad = [], [], []
     for dim in range(dims):
         dV_L, dV_R = spa_deriv(index, data, grid, dim)
-        left.append(dV_L)
-        right.append(dV_R)
-        grad.append((dV_L + dV_R)/2)
+        left.append(f(dV_L))
+        right.append(f(dV_R))
+        grad.append(f((left[-1] + right[-1])/f(2)))
 
-    state = [state_values[dim][index[dim]] for dim in range(dims)]
+    state = [f(state_values[dim][index[dim]]) for dim in range(dims)]
     uOpt = sys.opt_ctrl_numpy(t, state, grad)
-    rates = sys.dynamics_numpy(t, state, uOpt, 0)
-    alpha = sys.dissipation_coeffs_numpy(t, state, deriv_min, deriv_max)
+    rates = [f(r) for r in sys.dynamics_numpy(t, state, uOpt, 0)]
+    alpha = [f(a) for a in sys.dissipation_coeffs_numpy(t, state, deriv_min, deriv_max)]
 
-    diss = (right[0] - left[0])*alpha[0]
-    hamiltonian = rates[0]*grad[0]
+    diss = f((right[0] - left[0])*alpha[0])
+    hamiltonian = f(rates[0]*grad[0])
     for dim in range(1, dims):
-        diss = diss + (right[dim] - left[dim])*alpha[dim]
-        hamiltonian = hamiltonian + rates[dim]*grad[dim]
-    return (hamiltonian + 0.5*diss)*t_step
+        diss = f(diss + f((right[dim] - left[dim])*alpha[dim]))
+        hamiltonian = f(hamiltonian + f(rates[dim]*grad[dim]))
+    return f(f(hamiltonian + f(f(0.5)*diss))*f(t_step))
 
 
 def for_all_points(shape, body, prefix="p"):

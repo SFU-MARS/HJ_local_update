@@ -11,7 +11,8 @@ def solve_hj(sys, grid, data, tau, accuracy="low"):
         Solve the HJ PDE of sys on grid from the initial value data over the times tau with HJSolver
         (TargetSetMode "None", saving every time step).
             accuracy: "low" (1st order ENO + forward Euler) matches the local updates
-        Returns the value function with time as the last axis, index 0 is t = 0.
+        Returns the value function with time as the last axis, index 0 is t = 0, as 32-bit floats
+        (HJSolver computes in 32-bit floats, so the conversion is exact).
 
         The local updates take exactly one forward Euler step per time step, so HJSolver must too.
         HJSolver splits a time step when it is larger than its CFL bound, so this stops with an error
@@ -30,4 +31,4 @@ def solve_hj(sys, grid, data, tau, accuracy="low"):
         raise ValueError(f"HJSolver took {steps} steps for {len(tau) - 1} time steps, because the time step "
                          f"{tau[1] - tau[0]:g} is larger than its CFL bound. Use a smaller --t_step.")
     # HJSolver stores the initial value at index -1, flip so that index 0 is t = 0
-    return np.flip(result, axis=-1)
+    return np.flip(result, axis=-1).astype(np.float32)

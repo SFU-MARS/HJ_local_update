@@ -1,6 +1,6 @@
 # Leaking set: points where the decomposition can differ from the direct computation.
-#   dilate, get_leaking_set: 3d local update (numpy and HeteroCL)
-#   ground_truth_L, new_theory_L, ground_truth_delta: 6d local update
+#   dilate, get_leaking_set: every local update (numpy and HeteroCL)
+#   ground_truth_L, new_theory_L, ground_truth_delta: analysis helpers, not used by the scripts
 import numpy as np
 
 

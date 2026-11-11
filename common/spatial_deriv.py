@@ -1,6 +1,7 @@
 # First order spatial derivatives (left and right) for a grid of any dimension, same as optimized_dp's
 # 1st order ENO scheme (HJSolver accuracy "low"): periodic dimensions (grid.pDim) wrap around, other
-# dimensions extrapolate a ghost point at the grid edge.
+# dimensions extrapolate a ghost point at the grid edge. All of them keep the float type of the data
+# (32-bit, like HJSolver).
 #   spa_deriv:        numpy, one grid point
 #   spa_deriv_arrays: numpy, every grid point at once (same arithmetic)
 #   spa_deriv_hcl:    inside a HeteroCL kernel, keeping the float type of V
@@ -18,7 +19,8 @@ def spa_deriv(index, data, grid, dim):
     index = tuple(index)
     i = index[dim]
     n = data.shape[dim]
-    dx = grid.dx[dim]
+    # dx with the float type of data (numpy turns a 32-bit scalar divided by a Python float into 64-bit)
+    dx = data.dtype.type(grid.dx[dim])
     before, after = index[:dim], index[dim+1:]
 
     def value_at(k):
@@ -48,7 +50,7 @@ def spa_deriv_arrays(data, grid, dim):
         Returns (left_deriv, right_deriv) arrays with the shape of data.
     '''
     n = data.shape[dim]
-    dx = grid.dx[dim]
+    dx = data.dtype.type(grid.dx[dim])
 
     def sl(s):
         idx = [slice(None)] * data.ndim

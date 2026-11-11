@@ -56,8 +56,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     # Save the subsystem initial values on the 3D grid (x, y, theta), used for the leaking set
     # in the local update: init_1 = V1(x, theta), init_2 = V2(y, theta)
     os.makedirs(results_dir, exist_ok=True)
-    np.save(f'{results_dir}/init_1_3d.npy', np.broadcast_to(data_sub_1[:, np.newaxis, :], (num, num, num)))
-    np.save(f'{results_dir}/init_2_3d.npy', np.broadcast_to(data_sub_2[np.newaxis, :, :], (num, num, num)))
+    np.save(f'{results_dir}/init_1_3d.npy', np.broadcast_to(data_sub_1[:, np.newaxis, :], (num, num, num)).astype(np.float32))
+    np.save(f'{results_dir}/init_2_3d.npy', np.broadcast_to(data_sub_2[np.newaxis, :, :], (num, num, num)).astype(np.float32))
 
     ## Look-back length and time step of computation
     small_number = 1e-5

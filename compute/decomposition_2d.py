@@ -1,155 +1,68 @@
 # Decomposition of the 2d coupled control system: the 1D subsystem is solved with optimized_dp's HJSolver,
 # and V1(x), V2(y) are combined as min (union) or max (intersection).
-import numpy as np
-
-from odp.Grid import Grid
-from odp.Shapes import *
-
-from compute.hj_solver import solve_hj
-
-# Plot Options
-from odp.Plots import *
 import argparse
 import os
-
-from compute.config_2d import Config, construct1DGrid, construct2DGrid, add_compute_args_2d, config_from_compute_args_2d, result_files_2d
 import time
 
+import numpy as np
 
-class DecompositionResult:
-    def __init__(
-        self,
-        upper_subsystem_results,
-        lower_subsystem_results,
-        combined_results,
-    ) -> None:
-        self._upper_subsystem_results = upper_subsystem_results
-        self._lower_subsystem_results = lower_subsystem_results
-        self._combined_results = combined_results
-
-    def combined(self):
-        return self._combined_results
-
-    def subsystem1(self):
-        return self._upper_subsystem_results
-
-    def subsystem2(self):
-        return self._lower_subsystem_results
+from compute.config_2d import add_compute_args_2d, grid_sub_2d, init_value_sub_2d, result_files_2d
+from compute.hj_solver import solve_hj
+from common.combine import check_combine
 
 
-def decomposition(config: Config, saveAllTimeStep=True, debug=False):
+def decomposition(num, subsystem, lookback_length=0.2, combine="intersection", t_step=0.02):
     '''
-        Solve the 1D subsystem config._subsys_1d with HJSolver (accuracy "low", one step per time step) and
-        combine V1(x) and V2(y) (the same 1D result) into the 2D grid with min (union) or max (intersection).
-        Returns a DecompositionResult, time as the first axis.
+        Solve the 1D subsystem with HJSolver (accuracy "low", one step per time step). Both subsystems
+        x and y have the same dynamics and initial value, so it is solved once and used for V1(x) and V2(y).
+            subsystem: 1D subsystem dynamics, e.g. from dynamics.make_subdynamics (uMode from combine)
+            combine: "union" (V = min(V1, V2), avoid) or "intersection" (V = max(V1, V2), reach)
+        Returns (V, V1, V2) on the 2D grid, time as the first axis. V1 and V2 are broadcast views.
     '''
-    print("decomposition")
-    print("================================================")
-
-    # Create 1D Grid
-    g = construct1DGrid(
-        number_of_grid_points=config._number_of_grid_points,
-        min_val=-4.0,
-        max_val=4.0,
-    )
-
-    # Initialize value function for 1D and solve it
-    data_sub = config.value_function_1d(grid=g)
+    check_combine(combine, ("union", "intersection"), "2d")
+    g = grid_sub_2d(num)
+    tau = np.arange(start=0, stop=lookback_length + 1e-5, step=t_step)
     start = time.time()
-    result_1d = solve_hj(config._subsys_1d, g, data_sub, config._tau)
-    data_list = list(np.moveaxis(result_1d, -1, 0))
-    data_sub = data_list[-1]
+    # (s, t) -> (t, s)
+    V_sub = np.moveaxis(solve_hj(subsystem, g, init_value_sub_2d(g), tau), -1, 0)
+
+    # Subsystem 1 (x) and subsystem 2 (y) on the 2D grid (t, x, y)
+    result_upper = V_sub[:, :, np.newaxis]
+    result_lower = V_sub[:, np.newaxis, :]
+    result_full = np.minimum(result_upper, result_lower) if combine == "union" else np.maximum(result_upper, result_lower)
+    result_upper = np.broadcast_to(result_upper, result_full.shape)
+    result_lower = np.broadcast_to(result_lower, result_full.shape)
     print(f"Decomposition time: {time.time() - start:.4f} seconds")
-
-    """
-    Combine the results from 2 subsystems
-    """
-
-    if not saveAllTimeStep:
-        result_full, result_upper, result_lower = combine_subsystem_results(
-            result_upper=data_sub,
-            result_lower=data_sub,
-            number_of_grid_points=config._number_of_grid_points,
-            use_union=config._use_union,
-        )
-    else:
-        result_full, result_upper, result_lower = (
-            combine_subsystem_results_all_time_steps(
-                result_upper_list=data_list,
-                result_lower_list=data_list,
-                number_of_grid_points=config._number_of_grid_points,
-                use_union=config._use_union,
-            )
-        )
-        pass
-
-    decomposition_result = DecompositionResult(
-        upper_subsystem_results=result_upper,
-        lower_subsystem_results=result_lower,
-        combined_results=result_full,
-    )
-
-    return decomposition_result
-
-
-def combine_subsystem_results(result_upper, result_lower, number_of_grid_points, use_union):
-    result_upper_flip = np.flip(result_upper, axis=0)
-    result_upper_expand = np.tile(result_upper_flip, (number_of_grid_points, 1))
-    print(result_upper_expand.shape)
-    result_upper = np.transpose(result_upper_expand, (1, 0))
-
-    result_lower_flip = np.flip(result_lower, axis=0)
-    result_lower_expand = np.tile(result_lower_flip, (number_of_grid_points, 1))
-    print(result_lower_expand.shape)
-    result_lower = np.transpose(result_lower_expand, (0, 1))
-
-    if use_union:
-        result_full = np.minimum(result_upper, result_lower)
-    else:
-        result_full = np.maximum(result_upper, result_lower)
-    return result_full, result_upper, result_lower
-
-
-def combine_subsystem_results_all_time_steps(
-    result_upper_list, result_lower_list, number_of_grid_points, use_union,
-):
-
-    result_upper_flip = np.flip(result_upper_list, axis=0)
-    result_upper_expand = np.tile(result_upper_list, (number_of_grid_points, 1, 1))
-    # print(result_upper_expand.shape)
-    result_upper = np.transpose(result_upper_expand, (1, 2, 0))
-    # print(result_upper.shape)
-
-    result_lower_flip = np.flip(result_lower_list, axis=0)
-    result_lower_expand = np.tile(result_lower_list, (number_of_grid_points, 1, 1))
-    # print(result_lower_expand.shape)
-    result_lower = np.transpose(result_lower_expand, (1, 0, 2))
-    # print(result_lower.shape)
-    if use_union:
-        result_full = np.minimum(result_upper, result_lower)
-    else:
-        result_full = np.maximum(result_upper, result_lower)
     return result_full, result_upper, result_lower
 
 
 def main():
     '''
-        Run the 2d decomposition and save, all with shape (x, y, t):
-            results/result_decomp_2d_<combine>.npy: V = min (union) or max (intersection) of V1, V2
-            results/result_sub1_2d_<combine>.npy, results/result_sub2_2d_<combine>.npy: V1(x), V2(y) on the 2D grid
+        Run the 2d decomposition and save
+            results/result_decomp_2d_<combine>.npy: V = min(V1, V2) or max(V1, V2), shape (x, y, t)
+            results/init_1_2d.npy, results/init_2_2d.npy: V1, V2 at t = 0 on the 2D grid, used for the leaking set
     '''
+    from dynamics import make_subdynamics
     parser = argparse.ArgumentParser()
     add_compute_args_2d(parser)
     args = parser.parse_args()
-    config = config_from_compute_args_2d(parser, args)
     try:
-        result = decomposition(config=config, saveAllTimeStep=True)
+        check_combine(args.combine, ("union", "intersection"), "2d")
+        subsystem, = make_subdynamics(args.dynamics, args.dynamics_params, args.combine, dim=2)
+    except (ValueError, TypeError, NotImplementedError) as e:
+        parser.error(str(e))
+    print(f"Subsystem dynamics: {args.dynamics} {vars(subsystem)}")
+    try:
+        result_full, result_upper, result_lower = decomposition(
+            args.grid_size, subsystem, lookback_length=args.lookback_length, combine=args.combine, t_step=args.t_step)
     except ValueError as e:  # HJSolver needed more than one step per time step
         parser.error(str(e))
     os.makedirs(args.results_dir, exist_ok=True)
     files = result_files_2d(args.combine, args.results_dir)
-    for key, data in (("decomp", result.combined()), ("sub1", result.subsystem1()), ("sub2", result.subsystem2())):
-        np.save(files[key], np.moveaxis(np.asarray(data), 0, -1))
+    np.save(files["decomp"], np.moveaxis(result_full, 0, -1))
+    np.save(files["init_1"], result_upper[0])
+    np.save(files["init_2"], result_lower[0])
+    for key in ("decomp", "init_1", "init_2"):
         print(f"Saved {files[key]}")
 
 
