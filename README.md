@@ -78,7 +78,7 @@ python -m compute.decomposition_6d --grid_size 21 --combine union
 # 2. local update
 #   option 1: numpy (small grids only, e.g. --grid_size 9)
 python -m numpy_impl.local_update_6d --params numpy_impl/params/local_update_6d_union.json
-#   option 2: parallel HeteroCL (about 25 s, mostly reading and writing the files)
+#   option 2: parallel HeteroCL (about 9 s in total, 1.6 s of it the local update)
 python -m hcl_impl.local_update_6d --params hcl_impl/params/local_update_6d_union.json
 ```
 
@@ -95,7 +95,7 @@ For intersection, use `--combine intersection` and `local_update_6d_intersection
 | 21⁶ | union | 10 | 26250708 / – / 0 | 10.8 s | 0.12 s | – / 1.6 s |
 | 21⁶ | intersection | 10 | 26200126 / – / 0 | 10.8 s | 0.12 s | – / 1.6 s |
 
-All points are within 1e-6 of the direct computation (32-bit rounding), and numpy and HeteroCL are within 4.8e-7 of each other. numpy is not run at 21⁶. At 21⁶ (85.8 million points) each result file is 3.8 GB. The local update recomputes 28% of the point updates of the direct computation (239 of 858 million over the 10 steps); the whole HeteroCL script takes about 25 s and 10 GB, most of it reading the decomposition file and writing the result.
+All points are within 1e-6 of the direct computation (32-bit rounding), and numpy and HeteroCL are within 4.8e-7 of each other. numpy is not run at 21⁶. At 21⁶ (85.8 million points) each result file is 3.8 GB. The local update recomputes 28% of the point updates of the direct computation (239 of 858 million over the 10 steps); the whole HeteroCL script takes about 9 s and 10 GB: 1.4 s reading the decomposition file into HeteroCL, 1.6 s for the local update, 4.3 s writing the result, the rest setup.
 
 ## Parameter Files
 
@@ -137,7 +137,8 @@ Compute scripts (`compute/direct_<dim>.py`, `compute/decomposition_<dim>.py`), t
     numpy_impl/    numpy local updates: local_update_{2d,3d,6d}.py, growing_region.py, params/
     hcl_impl/      HeteroCL local updates: local_update_{2d,3d,6d}.py, growing_region.py, kernel_cache.py, params/
     common/        shared code: local update arguments and setup (local_update_setup.py), HJSolver step and spatial
-                   derivative (hj_update.py, spatial_deriv.py), leaking set, statistics, parameter files, union/intersection
+                   derivative (hj_update.py, spatial_deriv.py), leaking set, statistics, parameter files, union/intersection,
+                   fast reading/writing of the large result files (npy_io.py)
     results/       saved results (not in git)
     kernels/       compiled HeteroCL kernels (not in git)
 

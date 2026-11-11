@@ -3,6 +3,7 @@
 #   dim, grid (function of the grid size), axes (for the help text), and the defaults of dynamics, combine,
 #   t_step and grow_within_step.
 import os
+import time
 
 import numpy as np
 
@@ -123,11 +124,13 @@ def save_and_compare(args, result_local, name, hcl=False):
         Save the local update result to results/result_local[_hcl]_<name>_<combine>.npy and, if --true_file
         is given, compare the decomposition and the local update with the direct computation.
     '''
+    from common.npy_io import save_npy
     from common.stats import printCorrectnessStatistics
     os.makedirs("results", exist_ok=True)
     path = f"results/result_local{'_hcl' if hcl else ''}_{name}_{args.combine}.npy"
-    np.save(path, result_local)
-    print(f"Saved {path}")
+    start = time.time()
+    save_npy(path, result_local)
+    print(f"Saved {path} in {time.time() - start:.2f} seconds")
     if args.true_file is not None:
         printCorrectnessStatistics(np.load(args.true_file, mmap_mode='r'), np.load(args.decomp_file, mmap_mode='r'),
                                    result_local)

@@ -10,22 +10,38 @@ from heterocl import tvm
 import numpy as np
 
 from common import hj_update, spatial_deriv
+from common.npy_io import read_time_first
 from common.hj_update import DTYPE, DTYPE_HCL, abs_hcl, deriv_bounds_hcl, for_all_points, value_change_hcl
 from hcl_impl.kernel_cache import load_or_build_kernel
 
 
-def int_array(arr):
+def hcl_empty(shape, np_dtype):
     '''
-        HeteroCL Int (32-bit) array with the values of the numpy array arr, by a byte copy. hcl.asarray converts
-        integer arrays one element at a time in Python, which takes seconds for large grids.
+        Uninitialized HeteroCL array of the given shape and numpy type (np.float32 for DTYPE_HCL, np.int32 for
+        hcl.Int()), and a numpy view of its memory, so it can be filled without hcl.asarray: hcl.asarray copies
+        everything once more, and converts integer arrays one element at a time in Python (seconds for large grids).
+        Returns (HeteroCL array, numpy view).
     '''
-    from heterocl.tvm._ffi.base import _LIB, check_call
     from heterocl.tvm import ndarray as tvm_nd
-    from heterocl.types import dtype_to_str
-    arr = np.ascontiguousarray(arr, dtype=np.int32)
-    out = tvm_nd.empty(arr.shape, dtype_to_str(hcl.Int()))
-    check_call(_LIB.TVMArrayCopyFromBytes(out.handle, arr.ctypes.data_as(ctypes.c_void_p), ctypes.c_size_t(arr.nbytes)))
-    return out
+    np_dtype = np.dtype(np_dtype)
+    arr = tvm_nd.empty(tuple(int(n) for n in shape), str(np_dtype))
+    ptr = ctypes.cast(arr.handle.contents.data, ctypes.POINTER(np.ctypeslib.as_ctypes_type(np_dtype)))
+    return arr, np.ctypeslib.as_array(ptr, shape=tuple(int(n) for n in shape))
+
+
+def int_array(values=None, shape=None):
+    '''
+        HeteroCL Int (32-bit) array with the values of values (array-like), or zeros of the given shape.
+    '''
+    if values is not None:
+        values = np.asarray(values)
+        shape = values.shape
+    arr, view = hcl_empty(shape, np.int32)
+    if values is not None:
+        view[...] = values
+    else:
+        view.fill(0)
+    return arr
 
 
 def copy_to_numpy(src, out):
@@ -192,18 +208,12 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshol
                               (see numpy_impl/growing_region.py)
         Returns the corrected value function, same shape as the decomposition result.
     '''
-    # Step 1: load the decomposition result with time as the first axis, one time step at a time
-    # (the file is several GB at 21^6, so avoid extra copies)
-    decomp_file_data = np.load(decomp_file, mmap_mode='r')
-    num_steps = decomp_file_data.shape[-1]
-    shape = decomp_file_data.shape[:-1]
+    file_shape = np.load(decomp_file, mmap_mode='r').shape
+    num_steps = file_shape[-1]
+    shape = file_shape[:-1]
     dims = len(shape)
-    result_decomp = np.empty((num_steps,) + shape, dtype=DTYPE)
-    for i in range(num_steps):
-        result_decomp[i] = decomp_file_data[..., i]
-    del decomp_file_data
 
-    # Step 2: build (or load the cached) HeteroCL kernel and copy all inputs to HeteroCL arrays once
+    # Step 1: build (or load the cached) HeteroCL kernel
     hcl.init(DTYPE_HCL)
     total_start = time.time()
     key = (tuple(grid.pts_each_dim), tuple(grid.min), tuple(grid.max), tuple(grid.pDim), num_steps, threshold,
@@ -213,26 +223,26 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshol
                                        key, f"local_update_{dims}d", cache_dir)
     print(f"HeteroCL kernel {how} in {time.time() - total_start:.4f} seconds")
 
+    # Step 2: the inputs as HeteroCL arrays. The decomposition result is read from the file (time as the last
+    # axis) straight into V_decomp (time as the first axis)
+    V_decomp, V_decomp_view = hcl_empty((num_steps,) + shape, DTYPE)
+    read_time_first(decomp_file, V_decomp_view)
+
     xs = [hcl.asarray(np.reshape(grid.vs[d], grid.pts_each_dim[d]).astype(DTYPE), dtype=DTYPE_HCL) for d in range(dims)]
     t_step_hcl = hcl.asarray(np.array([t_step], dtype=DTYPE), dtype=DTYPE_HCL)
-    V_decomp = hcl.asarray(result_decomp, dtype=DTYPE_HCL)
     leaking_hcl = int_array(leaking)
-    zeros = np.zeros(shape, dtype=np.int32)
-    mark_read, mark_write, region, done = (int_array(zeros) for _ in range(4))
-    del zeros
-    counts = int_array(np.zeros(shape[0]))
+    mark_read, mark_write, region, done = (int_array(shape=shape) for _ in range(4))
+    counts = int_array(shape=(shape[0],))
     steps = [int_array([i]) for i in range(num_steps)]
     grow = int_array([int(grow_within_step)])
-    sweeps = int_array([0])
-    # Two value buffers, swapped after each time step
-    V_prev = hcl.asarray(result_decomp[0], dtype=DTYPE_HCL)
-    V_new = hcl.asarray(np.zeros(shape, dtype=DTYPE), dtype=DTYPE_HCL)
-    # Free the numpy copy of the decomposition (it is in V_decomp now) before allocating the result
-    init = result_decomp[0].copy()
-    del result_decomp
+    sweeps = int_array(shape=(1,))
+    # Two value buffers, swapped after each time step (the first sweep writes every point of V_new)
+    V_prev, V_prev_view = hcl_empty(shape, DTYPE)
+    V_prev_view[...] = V_decomp_view[0]
+    V_new, _ = hcl_empty(shape, DTYPE)
     result_local = np.empty((num_steps,) + shape, dtype=DTYPE)
-    result_local[0] = init
-    del init
+    result_local[0] = V_decomp_view[0]
+    del V_decomp_view, V_prev_view
 
     # Step 3: local updating loop over time steps
     start = time.time()
