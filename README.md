@@ -67,22 +67,25 @@ For intersection (reach), use `--combine intersection --dynamics_params '{"uMode
 
 The remaining points are 32-bit rounding that builds up over the 25 time steps: every point is within 2.4e-6 of the direct computation. numpy matches HJSolver exactly after the first step, HeteroCL within one rounding step (6e-8), since its kernel adds up the same terms in a different order.
 
-### Example: 4D Dubins Car (direct computation only)
+### Example: 4D Dubins Car (direct computation and decomposition, no local update yet)
 
-State (x, y, v, θ): ẋ = v cos θ, ẏ = v sin θ, v̇ = a, θ̇ = w with |a| ≤ aMax, |w| ≤ wMax (optimized_dp's `DubinsCar4D`, no disturbance). Grid x, y ∈ [−4, 4], v ∈ [0, 2], θ ∈ [−π, π] (periodic). Same sets as 3d, from the rectangles |x| ≤ 0.5 and |y| ≤ 0.5 (v and θ unbounded). `compute/direct_4d.py` mirrors `compute/direct_3d.py`; `--dynamics_params` takes `aMax`, `wMax` and `uMode` (default 1, 1 and `max`), and there is no `--dynamics`.
+State (x, y, v, θ): ẋ = v cos θ, ẏ = v sin θ, v̇ = a, θ̇ = w with |a| ≤ aMax, |w| ≤ wMax (optimized_dp's `DubinsCar4D`, no disturbance). Grid x, y ∈ [−4, 4], v ∈ [0, 2], θ ∈ [−π, π] (periodic). Same sets as 3d, from the rectangles |x| ≤ 0.5 and |y| ≤ 0.5 (v and θ unbounded), split into subsystems (x, v, θ) and (y, v, θ), which share v, θ and the controls. `compute/direct_4d.py` and `compute/decomposition_4d.py` mirror the 3d scripts; `--dynamics_params` takes `aMax`, `wMax` and `uMode` (default 1, 1 and `max`), and there is no `--dynamics`.
 
 ```bash
-# results/result_direct_4d_union.npy, shape (x, y, v, theta, t)
+# results/result_{direct,decomp}_4d_union.npy, results/init_{1,2}_4d.npy
 python -m compute.direct_4d --grid_size 41 --combine union
+python -m compute.decomposition_4d --grid_size 41 --combine union
 ```
 
-For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'`.
+For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both.
 
 The default `--t_step 0.01` is below HJSolver's CFL bound at 41⁴ (about 0.017, mostly set by the v spacing of 0.05).
 
-| Grid | Combine | Time steps | Direct computation (odp) |
-|---|---|---|---|
-| 41⁴ | union | 100 | 2.9 s |
+| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition | Direct computation (odp) | Decomposition (odp) |
+|---|---|---|---|---|---|
+| 41⁴ | union | 100 | 2516636 | 3.0 s | 0.22 s |
+
+The largest differences (up to 11.8) are at the grid edges: the direct computation grows to 17 at the corners of high x, y and v (the initial value is at most 3.5), from HJSolver's extrapolation past the edge of the grid, where the car speeds up out of v ∈ [0, 2]. Within x, y ∈ [−2, 2] and v ∈ [0.5, 1.5], the decomposition is off by at most 0.65 (3d: up to 1.6).
 
 ### Example: 6D Quadrotor
 
