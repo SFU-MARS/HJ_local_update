@@ -7,7 +7,7 @@ import time
 import numpy as np
 
 from compute.config_2d import add_compute_args_2d, grid_sub_2d, init_value_sub_2d, result_files_2d
-from compute.hj_solver import solve_hj
+from compute.hj_solver_wrapper import solve_hj
 from common.combine import check_combine
 
 

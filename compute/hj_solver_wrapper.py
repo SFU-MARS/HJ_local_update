@@ -1,4 +1,33 @@
-# optimized_dp's HJSolver as used by every direct computation and decomposition in compute/.
+# A thin wrapper around optimized_dp's HJSolver, used by every direct computation and decomposition
+# in compute/.
+#
+# Why not call HJSolver directly?
+# -------------------------------
+# solve_hj still calls HJSolver(..., saveAllTimeSteps=True). It only adds what is needed so the
+# results can be compared fairly with the local updates:
+#
+#   1. Same time steps as the local update (the important one).
+#      If the time step is larger than HJSolver's CFL bound, HJSolver quietly splits it into
+#      smaller steps. The local update always takes exactly one step per time step, so the two
+#      would no longer compute the same thing, and they would disagree even where the local
+#      update is right. solve_hj counts HJSolver's steps and stops with a clear error
+#      ("Use a smaller --t_step") instead of saving a result that cannot be compared.
+#
+#   2. Time goes forward: index 0 is t = 0.
+#      HJSolver puts t = 0 at the last index. solve_hj flips it, which is the order every saved
+#      file and the local update use. One flip here, instead of one in every script.
+#
+#   3. 32-bit floats.
+#      HJSolver computes in 32-bit floats, so saving them as such is exact. It halves the file
+#      size (a 21^6 result is 3.8 GB) and matches the precision of the local update.
+#
+#   4. Short logs.
+#      HJSolver prints a line for every step. solve_hj keeps only the total kernel time.
+#
+#   5. Same settings everywhere.
+#      TargetSetMode "None", and accuracy "low" by default: the scheme the local update uses
+#      (1st order ENO + forward Euler). Set once here, so the scripts cannot drift apart.
+
 import contextlib
 import io
 

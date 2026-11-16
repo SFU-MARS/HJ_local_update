@@ -150,7 +150,7 @@ Compute scripts (`compute/direct_<dim>.py`, `compute/decomposition_<dim>.py`), t
     dynamics/      full systems: coupled_2d.py, dubins_3d.py, quadrotor_6d.py (numpy and HeteroCL methods)
     subdynamics/   their subsystems, same file names; dubins_4d.py: subsystems (x, v, θ) and (y, v, θ) of the
                    4D Dubins car (the full 4D system is optimized_dp's DubinsCar4D)
-    compute/       direct computation and decomposition per case (HJSolver, hj_solver.py),
+    compute/       direct computation and decomposition per case (HJSolver, hj_solver_wrapper.py),
                    config_{2d,3d,6d}.py: grid, initial values, file names and local update defaults of each case
     numpy_impl/    numpy local updates: local_update_{2d,3d,6d}.py, growing_region.py, params/
     hcl_impl/      HeteroCL local updates: local_update_{2d,3d,6d}.py, growing_region.py, kernel_cache.py, params/

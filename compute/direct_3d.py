@@ -7,7 +7,7 @@ from odp.Grid import Grid
 from odp.Shapes import *
 from odp.solver import HJSolver
 
-from compute.hj_solver import solve_hj
+from compute.hj_solver_wrapper import solve_hj
 from odp.dynamics import DubinsCar
 
 from odp.Plots import PlotOptions

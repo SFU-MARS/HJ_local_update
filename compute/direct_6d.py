@@ -6,7 +6,7 @@ import time
 import numpy as np
 
 from compute.config_6d import add_compute_args_6d, grid_6d, init_values_6d, result_files_6d
-from compute.hj_solver import solve_hj
+from compute.hj_solver_wrapper import solve_hj
 from common.combine import check_combine
 from dynamics.quadrotor_6d import quadrotor
 
