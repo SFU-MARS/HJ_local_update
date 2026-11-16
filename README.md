@@ -72,7 +72,7 @@ The remaining points are 32-bit rounding that builds up over the 25 time steps: 
 State (x, y, v, θ): ẋ = v cos θ, ẏ = v sin θ, v̇ = a, θ̇ = w with |a| ≤ aMax, |w| ≤ wMax (optimized_dp's `DubinsCar4D`, no disturbance). Grid x, y ∈ [−4, 4], v ∈ [0, 2], θ ∈ [−π, π] (periodic). Same sets as 3d, from the rectangles |x| ≤ 0.5 and |y| ≤ 0.5 (v and θ unbounded), split into subsystems (x, v, θ) and (y, v, θ), which share v, θ and the controls. `compute/direct_4d.py` and `compute/decomposition_4d.py` mirror the 3d scripts; `--dynamics_params` takes `aMax`, `wMax` and `uMode` (default 1, 1 and `max`), and there is no `--dynamics`.
 
 ```bash
-# results/result_{direct,decomp}_4d_union.npy, results/init_{1,2}_4d.npy
+# 1. generate: results/result_{direct,decomp}_4d_union.npy, results/init_{1,2}_4d.npy
 python -m compute.direct_4d --grid_size 41 --combine union
 python -m compute.decomposition_4d --grid_size 41 --combine union
 # 2. local update
