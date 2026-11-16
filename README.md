@@ -67,7 +67,7 @@ For intersection (reach), use `--combine intersection --dynamics_params '{"uMode
 
 The remaining points are 32-bit rounding that builds up over the 25 time steps: every point is within 2.4e-6 of the direct computation. numpy matches HJSolver exactly after the first step, HeteroCL within one rounding step (6e-8), since its kernel adds up the same terms in a different order.
 
-### Example: 4D Dubins Car (direct computation and decomposition, no local update yet)
+### Example: 4D Dubins Car
 
 State (x, y, v, θ): ẋ = v cos θ, ẏ = v sin θ, v̇ = a, θ̇ = w with |a| ≤ aMax, |w| ≤ wMax (optimized_dp's `DubinsCar4D`, no disturbance). Grid x, y ∈ [−4, 4], v ∈ [0, 2], θ ∈ [−π, π] (periodic). Same sets as 3d, from the rectangles |x| ≤ 0.5 and |y| ≤ 0.5 (v and θ unbounded), split into subsystems (x, v, θ) and (y, v, θ), which share v, θ and the controls. `compute/direct_4d.py` and `compute/decomposition_4d.py` mirror the 3d scripts; `--dynamics_params` takes `aMax`, `wMax` and `uMode` (default 1, 1 and `max`), and there is no `--dynamics`.
 
@@ -75,17 +75,26 @@ State (x, y, v, θ): ẋ = v cos θ, ẏ = v sin θ, v̇ = a, θ̇ = w with |a| 
 # results/result_{direct,decomp}_4d_union.npy, results/init_{1,2}_4d.npy
 python -m compute.direct_4d --grid_size 41 --combine union
 python -m compute.decomposition_4d --grid_size 41 --combine union
+# 2. local update
+#   option 1: numpy (small grids only, e.g. --grid_size 15: about 2 minutes)
+python -m numpy_impl.local_update_4d --params numpy_impl/params/local_update_4d_union.json
+#   option 2: parallel HeteroCL
+python -m hcl_impl.local_update_4d --params hcl_impl/params/local_update_4d_union.json
 ```
 
-For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both.
+For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both compute scripts and `local_update_4d_intersection.json` (which sets `uMode` to `min`). The local updates use the full system class `dubins_4d` in [dynamics/dubins_4d.py](dynamics/dubins_4d.py), the same arithmetic as `DubinsCar4D`.
 
 The default `--t_step 0.01` is below HJSolver's CFL bound at 41⁴ (about 0.017, mostly set by the v spacing of 0.05).
 
-| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition | Direct computation (odp) | Decomposition (odp) |
-|---|---|---|---|---|---|
-| 41⁴ | union | 100 | 2516636 | 3.0 s | 0.22 s |
+| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
+|---|---|---|---|---|---|---|
+| 15⁴ | union | 100 | 49895 / 816 / 489 | 0.10 s | 0.10 s | 118 s / 0.091 s |
+| 41⁴ | union | 100 | 2516636 / – / 125870 | 3.0 s | 0.22 s | – / 0.55 s |
+| 41⁴ | intersection | 100 | 2503686 / – / 1005 | 3.0 s | 0.18 s | – / 0.55 s |
 
 The largest differences (up to 11.8) are at the grid edges: the direct computation grows to 17 at the corners of high x, y and v (the initial value is at most 3.5), from HJSolver's extrapolation past the edge of the grid, where the car speeds up out of v ∈ [0, 2]. Within x, y ∈ [−2, 2] and v ∈ [0.5, 1.5], the decomposition is off by at most 0.65 (3d: up to 1.6).
+
+The local update fixes every point with the wrong sign (17623 at 41⁴, 366 at 15⁴) and brings the mean error from 0.16 to 6.7e-7 (41⁴). The remaining points are 32-bit rounding: after the first step every point is within 2.4e-7 of the direct computation, but over the 100 steps the rounding grows where the value function grows at the grid edges, up to 8.3e-4 at 41⁴ (1.6e-5 numpy and 1.2e-5 HeteroCL at 15⁴; numpy and HeteroCL drift alike). Intersection, where the value function does not grow at the edges, stays within 4.4e-6 (57569 wrong signs fixed). The local update recomputes 66% of the point updates of the direct computation (187 of 283 million at 41⁴). numpy is not run at 41⁴.
 
 ### Example: 6D Quadrotor
 
@@ -127,12 +136,12 @@ Each local update reads its arguments from a JSON file in `numpy_impl/params/` o
 | `--params` | all | none | JSON parameter file |
 | `--decomp_file` | all | required | Decomposition result |
 | `--true_file` | all | none | Direct computation result, for the comparison |
-| `--combine` | all | 2d: `intersection`, 3d/6d: `union` | `union` or `intersection` |
+| `--combine` | all | 2d: `intersection`, 3d/4d/6d: `union` | `union` or `intersection` |
 | `--dynamics`, `--dynamics_params` | all | the case's system, `{}` | Dynamics name from [dynamics/__init__.py](dynamics/__init__.py) and its parameters as JSON, e.g. `{"uMax": 1.5, "uMode": "min"}`; the same as for the files. `uMode` is the control mode, `max` (avoid, default) or `min` (reach), independent of `--combine` |
-| `--t_step` | all | 2d: `0.02`, 3d: `0.04`, 6d: `0.01` | Time step used to compute the files |
+| `--t_step` | all | 2d: `0.02`, 3d: `0.04`, 4d/6d: `0.01` | Time step used to compute the files |
 | `--init_1`, `--init_2` | all | `results/init_{1,2}_<dim>.npy` | Subsystem values at t = 0, for the leaking set |
 | `--leaking_mode` | all | `smallest` | `smallest` (V1 = V2 and its neighbours) or `delta` (\|V1 − V2\| < δ) |
-| `--grow_within_step` | all | 2d: `true`, 3d/6d: `false` | Also grow the region within each time step |
+| `--grow_within_step` | all | 2d: `true`, 3d/4d/6d: `false` | Also grow the region within each time step |
 | `--cache_dir` | HeteroCL | `kernels` | Compiled kernel cache |
 
 Compute scripts (`compute/direct_<dim>.py`, `compute/decomposition_<dim>.py`), the same for every case:
@@ -150,13 +159,12 @@ Compute scripts (`compute/direct_<dim>.py`, `compute/decomposition_<dim>.py`), t
 
 ## Code Layout
 
-    dynamics/      full systems: coupled_2d.py, dubins_3d.py, quadrotor_6d.py (numpy and HeteroCL methods)
-    subdynamics/   their subsystems, same file names; dubins_4d.py: subsystems (x, v, θ) and (y, v, θ) of the
-                   4D Dubins car (the full 4D system is optimized_dp's DubinsCar4D)
+    dynamics/      full systems: coupled_2d.py, dubins_3d.py, dubins_4d.py, quadrotor_6d.py (numpy and HeteroCL methods)
+    subdynamics/   their subsystems, same file names
     compute/       direct computation and decomposition per case (HJSolver, hj_solver_wrapper.py),
-                   config_{2d,3d,6d}.py: grid, initial values, file names and local update defaults of each case
-    numpy_impl/    numpy local updates: local_update_{2d,3d,6d}.py, growing_region.py, params/
-    hcl_impl/      HeteroCL local updates: local_update_{2d,3d,6d}.py, growing_region.py, kernel_cache.py, params/
+                   config_{2d,3d,4d,6d}.py: grid, initial values, file names and local update defaults of each case
+    numpy_impl/    numpy local updates: local_update_{2d,3d,4d,6d}.py, growing_region.py, params/
+    hcl_impl/      HeteroCL local updates: local_update_{2d,3d,4d,6d}.py, growing_region.py, kernel_cache.py, params/
     common/        shared code: local update arguments and setup (local_update_setup.py), HJSolver step and spatial
                    derivative (hj_update.py, spatial_deriv.py), leaking set, statistics, parameter files, union/intersection,
                    reading the large decomposition file straight into HeteroCL (npy_io.py),

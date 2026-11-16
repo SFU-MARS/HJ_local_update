@@ -1,0 +1,13 @@
+{
+    "decomp_file": "results/result_decomp_4d_union.npy",
+    "true_file": "results/result_direct_4d_union.npy",
+    "init_1": "results/init_1_4d.npy",
+    "init_2": "results/init_2_4d.npy",
+    "combine": "union",
+    "dynamics": "dubins_4d",
+    "dynamics_params": {"aMax": 1, "wMax": 1},
+    "leaking_mode": "smallest",
+    "grow_within_step": false,
+    "t_step": 0.01,
+    "cache_dir": "kernels"
+}

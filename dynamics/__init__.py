@@ -14,14 +14,17 @@ import inspect
 from common.params import json_object
 from dynamics.coupled_2d import couple_u
 from dynamics.dubins_3d import dubins_car
+from dynamics.dubins_4d import dubins_car_4d
 from dynamics.quadrotor_6d import quadrotor
 from subdynamics import coupled_2d as sub_coupled_2d
 from subdynamics import dubins_3d as sub_dubins_3d
+from subdynamics import dubins_4d as sub_dubins_4d
 from subdynamics import quadrotor_6d as sub_quadrotor_6d
 
 DYNAMICS = {
     "coupled_2d": {"dim": 2, "system": couple_u, "subsystems": (sub_coupled_2d.subsys,)},
     "dubins_3d": {"dim": 3, "system": dubins_car, "subsystems": (sub_dubins_3d.subsys_1, sub_dubins_3d.subsys_2)},
+    "dubins_4d": {"dim": 4, "system": dubins_car_4d, "subsystems": (sub_dubins_4d.subsys_1, sub_dubins_4d.subsys_2)},
     "quadrotor_6d": {"dim": 6, "system": quadrotor, "subsystems": (sub_quadrotor_6d.subsys_1, sub_quadrotor_6d.subsys_2)},
 }
 
