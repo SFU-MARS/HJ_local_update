@@ -60,7 +60,7 @@ def add_compute_args(parser, grid_size, combine, t_step, lookback_length, dynami
     from dynamics import add_dynamics_args
     parser.add_argument("--grid_size", type=int, default=grid_size, help=f"Grid points per dimension (default {grid_size}).")
     parser.add_argument("--combine", choices=["union", "intersection"], default=combine,
-                        help="union = min(V1, V2) with uMode max (avoid), intersection = max(V1, V2) with uMode min (reach).")
+                        help="union = min(V1, V2), intersection = max(V1, V2). The control mode is uMode in --dynamics_params.")
     parser.add_argument("--t_step", type=float, default=t_step, help="Time step.")
     parser.add_argument("--lookback_length", type=float, default=lookback_length,
                         help="Look-back length, lookback_length / t_step time steps.")

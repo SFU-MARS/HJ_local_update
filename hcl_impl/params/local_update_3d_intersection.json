@@ -5,7 +5,7 @@
     "init_2": "results/init_2_3d.npy",
     "combine": "intersection",
     "dynamics": "dubins_3d",
-    "dynamics_params": {"v": 1, "wMax": 1},
+    "dynamics_params": {"v": 1, "wMax": 1, "uMode": "min"},
     "leaking_mode": "smallest",
     "grow_within_step": false,
     "t_step": 0.04,

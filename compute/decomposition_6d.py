@@ -10,7 +10,6 @@ from odp.Shapes import Lower_Half_Space
 from compute.config_6d import add_compute_args_6d, grid_sub_6d, result_files_6d
 from compute.hj_solver import solve_hj
 from common.combine import check_combine
-from dynamics import U_MODE
 from subdynamics.quadrotor_6d import subsys_1, subsys_2
 
 
@@ -18,9 +17,9 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.1, combine="union
     '''
         Solve both 4D subsystems with HJSolver (accuracy "low", one step per time step) and combine them on
         the 6D grid (x, y, vx, vy, theta, w).
-            combine: "union" (V = min(V1, V2), avoid, uMode max) or "intersection" (V = max(V1, V2), reach, uMode min)
+            combine: "union" (V = min(V1, V2)) or "intersection" (V = max(V1, V2))
             subsystems: (subsystem 1, subsystem 2) dynamics, e.g. from dynamics.make_subdynamics;
-                None uses subsys_1, subsys_2 with uTMax=1, utMax=1, uMode from combine
+                None uses subsys_1, subsys_2 with uTMax=1, utMax=1, uMode="max" (avoid)
         Returns (V, V1, V2) on the 6D grid, time as the first axis. V1 and V2 are broadcast views.
     '''
     check_combine(combine, ("union", "intersection"), "6d")
@@ -28,8 +27,8 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=0.1, combine="union
     data_sub = Lower_Half_Space(g, 0, 0)  # x <= 0 for subsystem 1, y <= 0 for subsystem 2
     tau = np.arange(start=0, stop=lookback_length + 1e-5, step=t_step)
     if subsystems is None:
-        subsystems = (subsys_1(uTMax=1, utMax=1, dMax=0.0, uMode=U_MODE[combine], dMode='min'),
-                      subsys_2(uTMax=1, utMax=1, dMax=0.0, uMode=U_MODE[combine], dMode='min'))
+        subsystems = (subsys_1(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min'),
+                      subsys_2(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min'))
 
     start = time.time()
     # (a, b, theta, w, t) -> (t, a, b, theta, w)
@@ -58,7 +57,7 @@ def main():
     args = parser.parse_args()
     try:
         check_combine(args.combine, ("union", "intersection"), "6d")
-        subsystems = make_subdynamics(args.dynamics, args.dynamics_params, args.combine, dim=6)
+        subsystems = make_subdynamics(args.dynamics, args.dynamics_params, dim=6)
     except (ValueError, TypeError, NotImplementedError) as e:
         parser.error(str(e))
     print(f"Subsystem dynamics: {args.dynamics} {vars(subsystems[0])}")

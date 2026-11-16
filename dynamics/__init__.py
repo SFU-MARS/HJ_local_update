@@ -25,22 +25,17 @@ DYNAMICS = {
     "quadrotor_6d": {"dim": 6, "system": quadrotor, "subsystems": (sub_quadrotor_6d.subsys_1, sub_quadrotor_6d.subsys_2)},
 }
 
-# The control mode follows how the subsystems are combined:
-#   union = avoid the set (control maximizes V), intersection = reach the set (control minimizes V)
-U_MODE = {"union": "max", "intersection": "min"}
-
-
 def add_dynamics_args(parser, default):
     '''
         Add --dynamics and --dynamics_params to an argparse parser of a local update script.
             default: default dynamics name of the script, e.g. "dubins_3d"
     '''
     parser.add_argument("--dynamics", choices=list(DYNAMICS), default=default,
-                        help=f"Dynamics of the full system (default {default}). The control mode follows --combine: "
-                        "union = avoid (uMode max), intersection = reach (uMode min).")
+                        help=f"Dynamics of the full system (default {default}).")
     parser.add_argument("--dynamics_params", type=json_object, default={},
-                        help="Parameters of the dynamics as a JSON object, e.g. '{\"v\": 1, \"wMax\": 1}' for dubins_3d. "
-                        "Anything left out takes the default of the dynamics class.")
+                        help="Parameters of the dynamics as a JSON object, e.g. '{\"v\": 1, \"wMax\": 1, \"uMode\": \"min\"}' for "
+                        "dubins_3d. uMode is the control mode, 'max' (avoid, default) or 'min' (reach); "
+                        "anything else left out takes the default of the dynamics class.")
 
 
 def check_dynamics(name, dim):
@@ -53,34 +48,33 @@ def check_dynamics(name, dim):
         raise ValueError(f"dynamics {name!r} is {DYNAMICS[name]['dim']}d, this local update is {dim}d")
 
 
-def _make(cls, params, combine):
-    if "uMode" in params:
-        raise ValueError("uMode is set by --combine (union: max, intersection: min), leave it out of dynamics_params")
-    accepted = [p for p in inspect.signature(cls.__init__).parameters if p not in ("self", "uMode")]
+def _make(cls, params):
+    accepted = [p for p in inspect.signature(cls.__init__).parameters if p != "self"]
     unknown = sorted(set(params) - set(accepted))
     if unknown:
         raise ValueError(f"unknown parameters {unknown} for {cls.__name__}, it accepts {accepted}")
-    kwargs = {"dMode": "min", **params, "uMode": U_MODE[combine]}
+    kwargs = {"uMode": "max", "dMode": "min", **params}
+    if kwargs["uMode"] not in ("min", "max"):
+        raise ValueError(f"uMode must be 'min' or 'max', got {kwargs['uMode']!r}")
     return cls(**kwargs)
 
 
-def make_dynamics(name, params, combine, dim):
+def make_dynamics(name, params, dim):
     '''
         Full system dynamics by name.
             name: key of DYNAMICS, e.g. "dubins_3d"
-            params: dict of constructor arguments, e.g. {"v": 1, "wMax": 1}; anything left out takes
-                    the class default. uMode comes from combine, dMode defaults to "min".
-            combine: "union" or "intersection"
+            params: dict of constructor arguments, e.g. {"v": 1, "wMax": 1, "uMode": "min"}; uMode defaults
+                    to "max" (avoid), dMode to "min", anything else left out takes the class default.
             dim: dimension of the local update, checked against the dynamics
     '''
     check_dynamics(name, dim)
-    return _make(DYNAMICS[name]["system"], params or {}, combine)
+    return _make(DYNAMICS[name]["system"], params or {})
 
 
-def make_subdynamics(name, params, combine, dim):
+def make_subdynamics(name, params, dim):
     '''
         Subsystem dynamics of the full system name, same parameters as make_dynamics.
         Returns a tuple with one object per subsystem class.
     '''
     check_dynamics(name, dim)
-    return tuple(_make(cls, params or {}, combine) for cls in DYNAMICS[name]["subsystems"])
+    return tuple(_make(cls, params or {}) for cls in DYNAMICS[name]["subsystems"])

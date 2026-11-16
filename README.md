@@ -17,7 +17,7 @@ In the tables below, times are the time-stepping loops only, measured on a machi
 
 ### Example: 2D Coupled Control
 
-ẋ = ux, ẏ = uy with ux² + uy² ≤ uMax², split into subsystems x and y, from the intervals |x| ≤ 1 and |y| ≤ 1. Union: the cross-shaped obstacle (avoid). Intersection: the square target (reach). The subsystems each get the full uMax, so their dissipation is larger than the full system's: the decomposition is also wrong at kinks of V away from the leaking set, which is why 2d grows the region within each step.
+ẋ = ux, ẏ = uy with ux² + uy² ≤ uMax², split into subsystems x and y, from the intervals |x| ≤ 1 and |y| ≤ 1. Union: the cross-shaped obstacle, avoided (`uMode` `max`). Intersection: the square target, reached (`uMode` `min`). The subsystems each get the full uMax, so their dissipation is larger than the full system's: the decomposition is also wrong at kinks of V away from the leaking set, which is why 2d grows the region within each step.
 
 ```bash
 # 1. generate: results/result_{direct,decomp}_2d_union.npy, results/init_{1,2}_2d.npy
@@ -30,7 +30,7 @@ python -m numpy_impl.local_update_2d --params numpy_impl/params/local_update_2d_
 python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d_union.json
 ```
 
-For intersection, use `--combine intersection` and `local_update_2d_intersection.json`.
+For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both compute scripts and `local_update_2d_intersection.json` (which sets `uMode` to `min`).
 
 | Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
@@ -45,7 +45,7 @@ All points are within 5e-7 of the direct computation (32-bit rounding), and nump
 
 ### Example: 3D Dubins Car
 
-ẋ = v cos θ, ẏ = v sin θ, θ̇ = w with |w| ≤ wMax, from the rectangles |x| ≤ 0.5 and |y| ≤ 0.5. Union: the cross-shaped obstacle (avoid). Intersection: the square target (reach).
+ẋ = v cos θ, ẏ = v sin θ, θ̇ = w with |w| ≤ wMax, from the rectangles |x| ≤ 0.5 and |y| ≤ 0.5. Union: the cross-shaped obstacle, avoided (`uMode` `max`). Intersection: the square target, reached (`uMode` `min`).
 
 ```bash
 # 1. generate: results/result_{direct,decomp}_3d_union.npy, results/init_{1,2}_3d.npy
@@ -58,7 +58,7 @@ python -m numpy_impl.local_update_3d --params numpy_impl/params/local_update_3d_
 python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d_union.json
 ```
 
-For intersection, use `--combine intersection` and `local_update_3d_intersection.json`.
+For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both compute scripts and `local_update_3d_intersection.json` (which sets `uMode` to `min`).
 
 | Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
@@ -67,9 +67,26 @@ For intersection, use `--combine intersection` and `local_update_3d_intersection
 
 The remaining points are 32-bit rounding that builds up over the 25 time steps: every point is within 2.4e-6 of the direct computation. numpy matches HJSolver exactly after the first step, HeteroCL within one rounding step (6e-8), since its kernel adds up the same terms in a different order.
 
+### Example: 4D Dubins Car (direct computation only)
+
+State (x, y, v, θ): ẋ = v cos θ, ẏ = v sin θ, v̇ = a, θ̇ = w with |a| ≤ aMax, |w| ≤ wMax (optimized_dp's `DubinsCar4D`, no disturbance). Grid x, y ∈ [−4, 4], v ∈ [0, 2], θ ∈ [−π, π] (periodic). Same sets as 3d, from the rectangles |x| ≤ 0.5 and |y| ≤ 0.5 (v and θ unbounded). `compute/direct_4d.py` mirrors `compute/direct_3d.py`; `--dynamics_params` takes `aMax`, `wMax` and `uMode` (default 1, 1 and `max`), and there is no `--dynamics`.
+
+```bash
+# results/result_direct_4d_union.npy, shape (x, y, v, theta, t)
+python -m compute.direct_4d --grid_size 41 --combine union
+```
+
+For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'`.
+
+The default `--t_step 0.01` is below HJSolver's CFL bound at 41⁴ (about 0.017, mostly set by the v spacing of 0.05).
+
+| Grid | Combine | Time steps | Direct computation (odp) |
+|---|---|---|---|
+| 41⁴ | union | 100 | 2.9 s |
+
 ### Example: 6D Quadrotor
 
-State (x, y, vx, vy, θ, w), split into subsystems (x, vx, θ, w) and (y, vy, θ, w), which share θ, w and the controls. Union: the obstacle x ≤ 0 or y ≤ 0 (avoid). Intersection: the target x ≤ 0 and y ≤ 0 (reach).
+State (x, y, vx, vy, θ, w), split into subsystems (x, vx, θ, w) and (y, vy, θ, w), which share θ, w and the controls. Union: the obstacle x ≤ 0 or y ≤ 0, avoided (`uMode` `max`). Intersection: the target x ≤ 0 and y ≤ 0, reached (`uMode` `min`).
 
 ```bash
 # 1. generate: results/result_{direct,decomp}_6d_union.npy, results/init_{1,2}_6d.npy
@@ -84,7 +101,7 @@ python -m hcl_impl.local_update_6d --params hcl_impl/params/local_update_6d_unio
 
 Use `--grid_size 9` for a quick run (HeteroCL under a second, numpy about 100 s).
 
-For intersection, use `--combine intersection` and `local_update_6d_intersection.json`.
+For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both compute scripts and `local_update_6d_intersection.json` (which sets `uMode` to `min`).
 
 | Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
@@ -108,7 +125,7 @@ Each local update reads its arguments from a JSON file in `numpy_impl/params/` o
 | `--decomp_file` | all | required | Decomposition result |
 | `--true_file` | all | none | Direct computation result, for the comparison |
 | `--combine` | all | 2d: `intersection`, 3d/6d: `union` | `union` or `intersection` |
-| `--dynamics`, `--dynamics_params` | all | the case's system, `{}` | Dynamics name from [dynamics/__init__.py](dynamics/__init__.py) and its parameters as JSON, e.g. `{"uMax": 1.5}`; the same as for the files |
+| `--dynamics`, `--dynamics_params` | all | the case's system, `{}` | Dynamics name from [dynamics/__init__.py](dynamics/__init__.py) and its parameters as JSON, e.g. `{"uMax": 1.5, "uMode": "min"}`; the same as for the files. `uMode` is the control mode, `max` (avoid, default) or `min` (reach), independent of `--combine` |
 | `--t_step` | all | 2d: `0.02`, 3d: `0.04`, 6d: `0.01` | Time step used to compute the files |
 | `--init_1`, `--init_2` | all | `results/init_{1,2}_<dim>.npy` | Subsystem values at t = 0, for the leaking set |
 | `--leaking_mode` | all | `smallest` | `smallest` (V1 = V2 and its neighbours) or `delta` (\|V1 − V2\| < δ) |
@@ -119,14 +136,14 @@ Compute scripts (`compute/direct_<dim>.py`, `compute/decomposition_<dim>.py`), t
 
 | Argument | Default | Description |
 |---|---|---|
-| `--grid_size` | 2d: `101`, 3d: `41`, 6d: `21` | Grid points per dimension |
-| `--combine` | 2d: `intersection`, 3d/6d: `union` | `union` or `intersection` |
-| `--dynamics`, `--dynamics_params` | the case's system, `{}` | Dynamics name from [dynamics/__init__.py](dynamics/__init__.py) and its parameters as JSON |
-| `--t_step` | 2d: `0.02`, 3d: `0.04`, 6d: `0.01` | Time step, at most HJSolver's CFL bound (the scripts stop with an error otherwise) |
-| `--lookback_length` | 2d: `0.2`, 3d: `1.0`, 6d: `0.1` | Look-back length, `lookback_length / t_step` time steps |
+| `--grid_size` | 2d: `101`, 3d/4d: `41`, 6d: `21` | Grid points per dimension |
+| `--combine` | 2d: `intersection`, 3d/4d/6d: `union` | `union` (V = min(V1, V2)) or `intersection` (V = max(V1, V2)); does not set the control mode |
+| `--dynamics`, `--dynamics_params` | the case's system, `{}` | Dynamics name from [dynamics/__init__.py](dynamics/__init__.py) and its parameters as JSON, including `uMode` (`max` by default, `min` to reach) |
+| `--t_step` | 2d: `0.02`, 3d: `0.04`, 4d/6d: `0.01` | Time step, at most HJSolver's CFL bound (the scripts stop with an error otherwise) |
+| `--lookback_length` | 2d: `0.2`, 3d/4d: `1.0`, 6d: `0.1` | Look-back length, `lookback_length / t_step` time steps |
 | `--results_dir` | `results` | Output folder |
 
-3d only: `--accuracy` (HJSolver accuracy, default `low`, which matches the local updates) and `--plot` (also save an interactive plot to `plots/`).
+3d and 4d only: `--accuracy` (HJSolver accuracy, default `low`, which matches the local updates) and `--plot` (also save an interactive plot to `plots/`).
 
 ## Code Layout
 

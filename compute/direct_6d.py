@@ -8,17 +8,15 @@ import numpy as np
 from compute.config_6d import add_compute_args_6d, grid_6d, init_values_6d, result_files_6d
 from compute.hj_solver import solve_hj
 from common.combine import check_combine
-from dynamics import U_MODE
 from dynamics.quadrotor_6d import quadrotor
 
 
 def direct_comp(num, saveAllTimeStep=True, lookback_length=0.1, combine="union", t_step=0.01, sys=None):
     '''
         Solve the 6D quadrotor with HJSolver (accuracy "low", one step per time step).
-            combine: "union" (obstacle x <= 0 or y <= 0, V = min, avoid) or "intersection" (target
-                x <= 0 and y <= 0, V = max, reach)
+            combine: "union" (x <= 0 or y <= 0, V = min) or "intersection" (x <= 0 and y <= 0, V = max)
             sys: full system dynamics, e.g. from dynamics.make_dynamics; None uses quadrotor with
-                 uTMax=1, utMax=1, uMode from combine (union: max, intersection: min)
+                 uTMax=1, utMax=1, uMode="max" (avoid)
         Returns (grid, value function with time as the last axis).
     '''
     check_combine(combine, ("union", "intersection"), "6d")
@@ -27,7 +25,7 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=0.1, combine="union",
     data = np.minimum(data1, data2) if combine == "union" else np.maximum(data1, data2)
     tau = np.arange(start=0, stop=lookback_length + 1e-5, step=t_step)
     if sys is None:
-        sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode=U_MODE[combine], dMode='min')
+        sys = quadrotor(uTMax=1, utMax=1, dMax=0.0, uMode='max', dMode='min')
     start = time.time()
     result = solve_hj(sys, g, data, tau)
     print(f"Direct computation time: {time.time() - start:.4f} seconds")
@@ -45,7 +43,7 @@ def main():
     args = parser.parse_args()
     try:
         check_combine(args.combine, ("union", "intersection"), "6d")
-        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=6)
+        sys = make_dynamics(args.dynamics, args.dynamics_params, dim=6)
     except (ValueError, TypeError, NotImplementedError) as e:
         parser.error(str(e))
     print(f"Dynamics: {args.dynamics} {vars(sys)}")

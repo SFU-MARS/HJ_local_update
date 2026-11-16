@@ -17,21 +17,20 @@ import time
 import os
 
 from common.combine import check_combine
-from dynamics import U_MODE
 
 
 def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
                 obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="low", plot=True,
-                combine="union", v=1, wMax=1, results_dir="results"):
+                combine="union", v=1, wMax=1, uMode="max", results_dir="results"):
     r'''
         Directly solve the 3D Dubins car
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{theta} = w
         with the optimized_dp HJSolver. The set is the same as in decomposition_3d.py, built from the
         rectangles x_min <= x <= x_max and y_min <= y <= y_max (theta unbounded):
-            combine="union": obstacle = union of the rectangles, V = min(V1, V2), control avoids it (uMode='max')
-            combine="intersection": target = intersection of the rectangles (a square), V = max(V1, V2),
-                control reaches it (uMode='min')
+            combine="union": union of the rectangles, V = min(V1, V2)
+            combine="intersection": intersection of the rectangles (a square), V = max(V1, V2)
             v, wMax: speed and turn rate bound of the Dubins car
+            uMode: "max" (control avoids the set) or "min" (control reaches it)
         Saves <results_dir>/result_direct_3d_<combine>.npy.
     '''
     check_combine(combine, ("union", "intersection"), "3d")
@@ -52,8 +51,8 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-    # Set system dynamics: union avoids the obstacle (uMode max), intersection reaches the target (uMode min)
-    sys = DubinsCar(wMax=wMax, speed=v, uMode=U_MODE[combine], dMode="min")
+    # Set system dynamics: uMode max avoids the set, uMode min reaches it
+    sys = DubinsCar(wMax=wMax, speed=v, uMode=uMode, dMode="min")
 
     # Same computation method as decomposition_3d.py
     compMethods = {"TargetSetMode": "None"}
@@ -98,13 +97,13 @@ def main():
     parser.add_argument("--plot", action="store_true", help="Also save an interactive plot to plots/.")
     args = parser.parse_args()
     try:
-        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=3)
+        sys = make_dynamics(args.dynamics, args.dynamics_params, dim=3)
     except (ValueError, TypeError) as e:
         parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
     print(f"Dynamics: {args.dynamics} {vars(sys)}")
     try:
         direct_comp(args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length, t_step=args.t_step,
-             accuracy=args.accuracy, plot=args.plot, combine=args.combine, v=sys.v, wMax=sys.wMax,
+             accuracy=args.accuracy, plot=args.plot, combine=args.combine, v=sys.v, wMax=sys.wMax, uMode=sys.uMode,
              results_dir=args.results_dir)
     except ValueError as e:  # HJSolver needed more than one step per time step
         parser.error(str(e))

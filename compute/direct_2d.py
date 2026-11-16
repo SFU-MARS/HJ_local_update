@@ -13,8 +13,8 @@ from common.combine import check_combine
 def direct_comp(num, sys, lookback_length=0.2, combine="intersection", t_step=0.02):
     '''
         Solve the 2D coupled control system with HJSolver (accuracy "low", one step per time step).
-            sys: full system dynamics, e.g. from dynamics.make_dynamics (uMode from combine)
-            combine: "union" (V = min(V1, V2), avoid) or "intersection" (V = max(V1, V2), reach)
+            sys: full system dynamics, e.g. from dynamics.make_dynamics (uMode from --dynamics_params, default 'max')
+            combine: "union" (V = min(V1, V2)) or "intersection" (V = max(V1, V2))
         Returns (grid, value function with time as the last axis).
     '''
     check_combine(combine, ("union", "intersection"), "2d")
@@ -38,7 +38,7 @@ def main():
     args = parser.parse_args()
     try:
         check_combine(args.combine, ("union", "intersection"), "2d")
-        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=2)
+        sys = make_dynamics(args.dynamics, args.dynamics_params, dim=2)
     except (ValueError, TypeError, NotImplementedError) as e:
         parser.error(str(e))
     print(f"Dynamics: {args.dynamics} {vars(sys)}")

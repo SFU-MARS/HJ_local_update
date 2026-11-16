@@ -15,8 +15,8 @@ def decomposition(num, subsystem, lookback_length=0.2, combine="intersection", t
     '''
         Solve the 1D subsystem with HJSolver (accuracy "low", one step per time step). Both subsystems
         x and y have the same dynamics and initial value, so it is solved once and used for V1(x) and V2(y).
-            subsystem: 1D subsystem dynamics, e.g. from dynamics.make_subdynamics (uMode from combine)
-            combine: "union" (V = min(V1, V2), avoid) or "intersection" (V = max(V1, V2), reach)
+            subsystem: 1D subsystem dynamics, e.g. from dynamics.make_subdynamics (uMode from --dynamics_params, default 'max')
+            combine: "union" (V = min(V1, V2)) or "intersection" (V = max(V1, V2))
         Returns (V, V1, V2) on the 2D grid, time as the first axis. V1 and V2 are broadcast views.
     '''
     check_combine(combine, ("union", "intersection"), "2d")
@@ -48,7 +48,7 @@ def main():
     args = parser.parse_args()
     try:
         check_combine(args.combine, ("union", "intersection"), "2d")
-        subsystem, = make_subdynamics(args.dynamics, args.dynamics_params, args.combine, dim=2)
+        subsystem, = make_subdynamics(args.dynamics, args.dynamics_params, dim=2)
     except (ValueError, TypeError, NotImplementedError) as e:
         parser.error(str(e))
     print(f"Subsystem dynamics: {args.dynamics} {vars(subsystem)}")

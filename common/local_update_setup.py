@@ -50,8 +50,8 @@ def add_local_update_args(parser, case, hcl=False):
     parser.add_argument("--init_2", default=f"results/init_2_{name}.npy",
                         help="npy file of the subsystem 2 initial value V2, same as --init_1.")
     parser.add_argument("--combine", choices=["union", "intersection"], default=case["combine"],
-                        help="How the subsystems are combined: 'union' = min(V1, V2), avoid (uMode max), "
-                        "'intersection' = max(V1, V2), reach (uMode min). Use the same as for the files.")
+                        help="How the subsystems are combined: 'union' = min(V1, V2), 'intersection' = max(V1, V2). "
+                        "The control mode is uMode in --dynamics_params. Use the same as for the files.")
     parser.add_argument("--leaking_mode", choices=["smallest", "delta"], default="smallest",
                         help="Initial leaking set: 'smallest' = switching surface V1 = V2 plus its neighbours (default), "
                         "'delta' = |V1 - V2| < delta.")
@@ -107,7 +107,7 @@ def setup_local_update(parser, case, hcl=False):
 
     # Dynamics (--dynamics, --dynamics_params), use the same as the files
     try:
-        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=dim)
+        sys = make_dynamics(args.dynamics, args.dynamics_params, dim=dim)
     except (ValueError, TypeError) as e:
         parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
     print(f"Dynamics: {args.dynamics} {vars(sys)}")

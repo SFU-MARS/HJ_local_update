@@ -20,12 +20,11 @@ import time
 import os
 
 from common.combine import check_combine
-from dynamics import U_MODE
 
 
 def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
                   obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="low", plot=True,
-                  combine="union", v=1, wMax=1, results_dir="results"):
+                  combine="union", v=1, wMax=1, uMode="max", results_dir="results"):
     r'''
         Decompose the 3D Dubins car
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{theta} = w
@@ -35,11 +34,10 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
         Each subsystem is solved with the optimized_dp HJSolver, and the 3D value function is
         reconstructed from V1(x, theta) and V2(y, theta), with the rectangles x_min <= x <= x_max and
         y_min <= y <= y_max (theta unbounded):
-            combine="union": V = min(V1, V2), the obstacle is the union of the rectangles, control
-                avoids it (uMode='max')
-            combine="intersection": V = max(V1, V2), the target is the intersection of the rectangles
-                (a square), control reaches it (uMode='min')
+            combine="union": V = min(V1, V2), the union of the rectangles
+            combine="intersection": V = max(V1, V2), the intersection of the rectangles (a square)
             v, wMax: speed and turn rate bound of the Dubins car
+            uMode: "max" (control avoids the set) or "min" (control reaches it)
         Saves <results_dir>/result_decomp_3d_<combine>.npy and <results_dir>/init_1_3d.npy, init_2_3d.npy
         (the initial values do not depend on combine).
     '''
@@ -63,9 +61,9 @@ def decomposition(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.04,
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-    # Set system dynamics: union avoids the obstacle (uMode max), intersection reaches the target (uMode min)
-    sys_1 = subsys_1(v=v, wMax=wMax, dMax=0.0, uMode=U_MODE[combine], dMode='min')
-    sys_2 = subsys_2(v=v, wMax=wMax, dMax=0.0, uMode=U_MODE[combine], dMode='min')
+    # Set system dynamics: uMode max avoids the set, uMode min reaches it
+    sys_1 = subsys_1(v=v, wMax=wMax, dMax=0.0, uMode=uMode, dMode='min')
+    sys_2 = subsys_2(v=v, wMax=wMax, dMax=0.0, uMode=uMode, dMode='min')
 
     # Backward reachable tube of the obstacle
     compMethods = {"TargetSetMode": "None"}
@@ -149,13 +147,13 @@ def main():
     parser.add_argument("--plot", action="store_true", help="Also save an interactive plot to plots/.")
     args = parser.parse_args()
     try:
-        sys = make_dynamics(args.dynamics, args.dynamics_params, args.combine, dim=3)
+        sys = make_dynamics(args.dynamics, args.dynamics_params, dim=3)
     except (ValueError, TypeError) as e:
         parser.error(f"--dynamics {args.dynamics} --dynamics_params {args.dynamics_params}: {e}")
     print(f"Dynamics: {args.dynamics} {vars(sys)}")
     try:
         decomposition(args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length, t_step=args.t_step,
-             accuracy=args.accuracy, plot=args.plot, combine=args.combine, v=sys.v, wMax=sys.wMax,
+             accuracy=args.accuracy, plot=args.plot, combine=args.combine, v=sys.v, wMax=sys.wMax, uMode=sys.uMode,
              results_dir=args.results_dir)
     except ValueError as e:  # HJSolver needed more than one step per time step
         parser.error(str(e))
