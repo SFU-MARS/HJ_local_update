@@ -9,11 +9,22 @@ A decomposition approximates a full Hamilton-Jacobi value function by combining 
 
 ## Workflow
 
-1. **Generate** the direct computation (ground truth) and the decomposition with `compute/`. In every case both are solved with optimized_dp's HJSolver: the direct computation solves the full system (2D, 3D or 6D), and the decomposition solves each subsystem (1D for 2d, 2D for 3d, 4D for 6d) and combines them. HJSolver runs with `accuracy="low"` (1st order ENO + forward Euler) and exactly one step per time step; if `--t_step` is above its CFL bound, the scripts stop with an error. The results are saved to `results/` in 32-bit floats (as HJSolver computes them): the direct computation with time as the last axis, shape `(x, y, …, t)` (as HJSolver returns it), and the decomposition with time as the first axis, shape `(t, x, y, …)`, so the local update can read it without reordering. The direct computation is optional: it is only used for the comparison in step 3.
+1. **Generate** the direct computation (ground truth) and the decomposition with `compute/`. In every case both are solved with optimized_dp's HJSolver: the direct computation solves the full system (2D, 3D, 4D or 6D), and the decomposition solves each subsystem (1D for 2d, 2D for 3d, 3D for 4d, 4D for 6d) and combines them. HJSolver runs with `accuracy="low"` (1st order ENO + forward Euler) and exactly one step per time step; if `--t_step` is above its CFL bound, the scripts stop with an error. The results are saved to `results/` in 32-bit floats (as HJSolver computes them): the direct computation with time as the last axis, shape `(x, y, …, t)` (as HJSolver returns it), and the decomposition with time as the first axis, shape `(t, x, y, …)`, so the local update can read it without reordering. The direct computation is optional: it is only used for the comparison in step 3.
 2. **Local update** with `numpy_impl/` or `hcl_impl/` (HeteroCL, much faster), from a parameter file in its `params/` folder. Every case uses the same growing-region method (`growing_region.py`): the leaking set comes from the subsystem values at t = 0 (V1 = V2 and its neighbours), and at each time step the region is that set plus the points corrected at the previous step and their neighbours. With `grow_within_step` (on for 2d), the region also grows within each step until no new point changes. At each updated point it takes the same step as HJSolver, including the Lax-Friedrichs dissipation, in 32-bit floats (`common/hj_update.py`).
 3. **Results** are saved to `results/result_local_<dim>_<combine>.npy` (numpy) or `results/result_local_hcl_<dim>_<combine>.npy` (HeteroCL), time as the first axis like the decomposition. If `true_file` (the direct computation result) is given, the local update also prints the error against it at the final time; the direct computation result is only used for this comparison, never by the local update. It can be `null`, set `"true_file": null` in the parameter file or add `--true_file null`, and then the local update runs without the comparison. The HeteroCL version saves its compiled kernel in `kernels/` and loads it on later runs.
 
 In the tables below, times are the time-stepping loops only, measured on a machine with 32 logical CPUs: HJSolver's "Total kernel time" for the direct computation and the decomposition (summed over the subsystems), and the correction loop for the local update. Kernel builds are not included: each HJSolver call builds its kernel first (about 0.1–0.4 s more), and the HeteroCL local update times are from a second run, which loads the kernel saved by the first. The input copies before the loop are not included either.
+
+### Time step and lookback length of each example
+
+The lookback length (time horizon) sets the number of time steps, `lookback_length / t_step`, and matters as much as the grid: a longer horizon lets the decomposition error spread further and gives 32-bit rounding more steps to grow, so the local update corrects more points and takes longer (see the 4D lookback study below). `t_step` is limited by HJSolver's CFL bound. Use the same `--t_step` and `--lookback_length` for the direct computation and the decomposition; the local update reads the number of steps from the files and takes `t_step` from its parameter file.
+
+| Example | Grid (default) | `--t_step` | `--lookback_length` | Time steps |
+|---|---|---|---|---|
+| 2D coupled control | 101² | 0.02 | 0.2 | 10 |
+| 3D Dubins car | 41³ | 0.04 | 1.0 | 25 |
+| 4D Dubins car | 41⁴ | 0.01 | 1.0 | 100 |
+| 6D quadrotor | 21⁶ | 0.01 | 0.1 | 10 |
 
 ### Example: 2D Coupled Control
 
@@ -21,8 +32,8 @@ In the tables below, times are the time-stepping loops only, measured on a machi
 
 ```bash
 # 1. generate: results/result_{direct,decomp}_2d_union.npy, results/init_{1,2}_2d.npy
-python -m compute.direct_2d --grid_size 101 --combine union
-python -m compute.decomposition_2d --grid_size 101 --combine union
+python -m compute.direct_2d --grid_size 101 --t_step 0.02 --lookback_length 0.2 --combine union
+python -m compute.decomposition_2d --grid_size 101 --t_step 0.02 --lookback_length 0.2 --combine union
 # 2. local update
 #   option 1: numpy
 python -m numpy_impl.local_update_2d --params numpy_impl/params/local_update_2d_union.json
@@ -32,14 +43,14 @@ python -m hcl_impl.local_update_2d --params hcl_impl/params/local_update_2d_unio
 
 For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both compute scripts and `local_update_2d_intersection.json` (which sets `uMode` to `min`).
 
-| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
+| Grid | Combine | `t_step` / lookback (time steps) | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
-| 41² | union | 10 | 1233 / 0 / 0 | 0.024 s | 0.016 s | 0.21 s / 0.0013 s |
-| 41² | intersection | 10 | 897 / 0 / 0 | 0.024 s | 0.016 s | 0.14 s / 0.0011 s |
-| 101² | union | 10 | 4569 / 0 / 0 | 0.024 s | 0.016 s | 0.66 s / 0.0024 s |
-| 101² | intersection | 10 | 3145 / 0 / 0 | 0.024 s | 0.016 s | 0.43 s / 0.0018 s |
-| 201² | union | 10 | 10473 / 0 / 0 | 0.025 s | 0.016 s | 1.5 s / 0.0060 s |
-| 201² | intersection | 10 | 7277 / 0 / 0 | 0.025 s | 0.016 s | 0.91 s / 0.0033 s |
+| 41² | union | 0.02 / 0.2 (10) | 1233 / 0 / 0 | 0.024 s | 0.016 s | 0.21 s / 0.0013 s |
+| 41² | intersection | 0.02 / 0.2 (10) | 897 / 0 / 0 | 0.024 s | 0.016 s | 0.14 s / 0.0011 s |
+| 101² | union | 0.02 / 0.2 (10) | 4569 / 0 / 0 | 0.024 s | 0.016 s | 0.66 s / 0.0024 s |
+| 101² | intersection | 0.02 / 0.2 (10) | 3145 / 0 / 0 | 0.024 s | 0.016 s | 0.43 s / 0.0018 s |
+| 201² | union | 0.02 / 0.2 (10) | 10473 / 0 / 0 | 0.025 s | 0.016 s | 1.5 s / 0.0060 s |
+| 201² | intersection | 0.02 / 0.2 (10) | 7277 / 0 / 0 | 0.025 s | 0.016 s | 0.91 s / 0.0033 s |
 
 All points are within 5e-7 of the direct computation (32-bit rounding), and numpy and HeteroCL update the same points, within 2.4e-7 of each other. 2d grows the region within each step (`grow_within_step`), in the HeteroCL kernel too.
 
@@ -49,8 +60,8 @@ All points are within 5e-7 of the direct computation (32-bit rounding), and nump
 
 ```bash
 # 1. generate: results/result_{direct,decomp}_3d_union.npy, results/init_{1,2}_3d.npy
-python -m compute.direct_3d --grid_size 41 --combine union
-python -m compute.decomposition_3d --grid_size 41 --combine union
+python -m compute.direct_3d --grid_size 41 --t_step 0.04 --lookback_length 1.0 --combine union
+python -m compute.decomposition_3d --grid_size 41 --t_step 0.04 --lookback_length 1.0 --combine union
 # 2. local update
 #   option 1: numpy
 python -m numpy_impl.local_update_3d --params numpy_impl/params/local_update_3d_union.json
@@ -60,10 +71,10 @@ python -m hcl_impl.local_update_3d --params hcl_impl/params/local_update_3d_unio
 
 For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both compute scripts and `local_update_3d_intersection.json` (which sets `uMode` to `min`).
 
-| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
+| Grid | Combine | `t_step` / lookback (time steps) | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
-| 41³ | union | 25 | 55224 / 6 / 30 | 0.047 s | 0.051 s | 20.9 s / 0.0048 s |
-| 41³ | intersection | 25 | 54902 / 2 / 18 | 0.046 s | 0.051 s | 20.9 s / 0.0048 s |
+| 41³ | union | 0.04 / 1.0 (25) | 55224 / 6 / 30 | 0.047 s | 0.051 s | 20.9 s / 0.0048 s |
+| 41³ | intersection | 0.04 / 1.0 (25) | 54902 / 2 / 18 | 0.046 s | 0.051 s | 20.9 s / 0.0048 s |
 
 The remaining points are 32-bit rounding that builds up over the 25 time steps: every point is within 2.4e-6 of the direct computation. numpy matches HJSolver exactly after the first step, HeteroCL within one rounding step (6e-8), since its kernel adds up the same terms in a different order.
 
@@ -73,8 +84,8 @@ State (x, y, v, θ): ẋ = v cos θ, ẏ = v sin θ, v̇ = a, θ̇ = w with |a| 
 
 ```bash
 # 1. generate: results/result_{direct,decomp}_4d_union.npy, results/init_{1,2}_4d.npy
-python -m compute.direct_4d --grid_size 41 --combine union
-python -m compute.decomposition_4d --grid_size 41 --combine union
+python -m compute.direct_4d --grid_size 41 --t_step 0.01 --lookback_length 1.0 --combine union
+python -m compute.decomposition_4d --grid_size 41 --t_step 0.01 --lookback_length 1.0 --combine union
 # 2. local update
 #   option 1: numpy (small grids only, e.g. --grid_size 15: about 2 minutes)
 python -m numpy_impl.local_update_4d --params numpy_impl/params/local_update_4d_union.json
@@ -86,15 +97,27 @@ For intersection (reach), use `--combine intersection --dynamics_params '{"uMode
 
 The default `--t_step 0.01` is below HJSolver's CFL bound at 41⁴ (about 0.017, mostly set by the v spacing of 0.05).
 
-| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
+| Grid | Combine | `t_step` / lookback (time steps) | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
-| 15⁴ | union | 100 | 49895 / 816 / 489 | 0.10 s | 0.10 s | 118 s / 0.091 s |
-| 41⁴ | union | 100 | 2516636 / – / 125870 | 3.0 s | 0.22 s | – / 0.55 s |
-| 41⁴ | intersection | 100 | 2503686 / – / 1005 | 3.0 s | 0.18 s | – / 0.55 s |
+| 15⁴ | union | 0.01 / 1.0 (100) | 49895 / 816 / 489 | 0.10 s | 0.10 s | 118 s / 0.091 s |
+| 41⁴ | union | 0.01 / 1.0 (100) | 2516636 / – / 125870 | 3.0 s | 0.22 s | – / 0.55 s |
+| 41⁴ | intersection | 0.01 / 1.0 (100) | 2503686 / – / 1005 | 3.0 s | 0.18 s | – / 0.55 s |
 
 The largest differences (up to 11.8) are at the grid edges: the direct computation grows to 17 at the corners of high x, y and v (the initial value is at most 3.5), from HJSolver's extrapolation past the edge of the grid, where the car speeds up out of v ∈ [0, 2]. Within x, y ∈ [−2, 2] and v ∈ [0.5, 1.5], the decomposition is off by at most 0.65 (3d: up to 1.6).
 
 The local update fixes every point with the wrong sign (17623 at 41⁴, 366 at 15⁴) and brings the mean error from 0.16 to 6.7e-7 (41⁴). The remaining points are 32-bit rounding: after the first step every point is within 2.4e-7 of the direct computation, but over the 100 steps the rounding grows where the value function grows at the grid edges, up to 8.3e-4 at 41⁴ (1.6e-5 numpy and 1.2e-5 HeteroCL at 15⁴; numpy and HeteroCL drift alike). Intersection, where the value function does not grow at the edges, stays within 4.4e-6 (57569 wrong signs fixed). The local update recomputes 66% of the point updates of the direct computation (187 of 283 million at 41⁴). numpy is not run at 41⁴.
+
+**Lookback study (41⁴, union, HeteroCL).** The largest `t_step` HJSolver allows at 41⁴ is 0.017 (0.0175 already splits steps); keep the lookback a whole multiple of `t_step`, or the last time step stops short of it.
+
+| `t_step` | Lookback | Time steps | Direct computation (odp) | Local update (HeteroCL) | Points off > 1e-6: decomposition / local update | Max error after local update |
+|---|---|---|---|---|---|---|
+| 0.016 | 0.4 | 25 | 0.95 s | 0.11 s | 1541366 / 2049 | 3.9e-5 |
+| 0.016 | 0.8 | 50 | 1.5 s | 0.30 s | 2235263 / 56767 | 5.6e-4 |
+| 0.0125 | 1.0 | 80 | 2.5 s | 0.49 s | 2498364 / 129548 | 3.1e-4 |
+| 0.017 | 1.0 | 59 | 1.8 s | 0.35 s | 2462992 / 113548 | 8.0e-4 |
+| 0.01 (default) | 1.0 | 100 | 3.0 s | 0.55 s | 2516636 / 125870 | 8.3e-4 |
+
+The lookback matters most: doubling it from 0.4 to 0.8 leaves about 28 times as many points off. For the same horizon, a time step at the CFL limit is not more accurate (0.017 vs 0.0125). Every setting fixes all points with the wrong sign. With 3D's `t_step` 0.04 and lookback 1.0, the largest 4D grid within the CFL bound is 18⁴.
 
 ### Example: 6D Quadrotor
 
@@ -102,8 +125,8 @@ State (x, y, vx, vy, θ, w), split into subsystems (x, vx, θ, w) and (y, vy, θ
 
 ```bash
 # 1. generate: results/result_{direct,decomp}_6d_union.npy, results/init_{1,2}_6d.npy
-python -m compute.direct_6d --grid_size 21 --combine union
-python -m compute.decomposition_6d --grid_size 21 --combine union
+python -m compute.direct_6d --grid_size 21 --t_step 0.01 --lookback_length 0.1 --combine union
+python -m compute.decomposition_6d --grid_size 21 --t_step 0.01 --lookback_length 0.1 --combine union
 # 2. local update
 #   option 1: numpy (small grids only, e.g. --grid_size 9)
 python -m numpy_impl.local_update_6d --params numpy_impl/params/local_update_6d_union.json
@@ -115,14 +138,14 @@ Use `--grid_size 9` for a quick run (HeteroCL under a second, numpy about 100 s)
 
 For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both compute scripts and `local_update_6d_intersection.json` (which sets `uMode` to `min`).
 
-| Grid | Combine | Time steps | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
+| Grid | Combine | `t_step` / lookback (time steps) | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
-| 7⁶ | union | 10 | 72058 / 0 / 0 | 0.10 s | 0.084 s | 28.6 s / 0.0059 s |
-| 7⁶ | intersection | 10 | 71538 / 0 / 0 | 0.099 s | 0.086 s | 27.7 s / 0.0092 s |
-| 9⁶ | union | 10 | 279471 / 0 / 0 | 0.16 s | 0.087 s | 104 s / 0.024 s |
-| 9⁶ | intersection | 10 | 276310 / 0 / 0 | 0.17 s | 0.086 s | 102 s / 0.022 s |
-| 21⁶ | union | 10 | 26250708 / – / 0 | 10.8 s | 0.12 s | – / 0.82 s |
-| 21⁶ | intersection | 10 | 26200126 / – / 0 | 10.9 s | 0.13 s | – / 0.87 s |
+| 7⁶ | union | 0.01 / 0.1 (10) | 72058 / 0 / 0 | 0.10 s | 0.084 s | 28.6 s / 0.0059 s |
+| 7⁶ | intersection | 0.01 / 0.1 (10) | 71538 / 0 / 0 | 0.099 s | 0.086 s | 27.7 s / 0.0092 s |
+| 9⁶ | union | 0.01 / 0.1 (10) | 279471 / 0 / 0 | 0.16 s | 0.087 s | 104 s / 0.024 s |
+| 9⁶ | intersection | 0.01 / 0.1 (10) | 276310 / 0 / 0 | 0.17 s | 0.086 s | 102 s / 0.022 s |
+| 21⁶ | union | 0.01 / 0.1 (10) | 26250708 / – / 0 | 10.8 s | 0.12 s | – / 0.82 s |
+| 21⁶ | intersection | 0.01 / 0.1 (10) | 26200126 / – / 0 | 10.9 s | 0.13 s | – / 0.87 s |
 
 All points are within 1e-6 of the direct computation (32-bit rounding), and numpy and HeteroCL are within 4.8e-7 of each other. numpy is not run at 21⁶. At 21⁶ (85.8 million points) each result file is 3.8 GB. The local update recomputes 28% of the point updates of the direct computation (239 of 858 million over the 10 steps); the whole HeteroCL script takes about 7 s and 5.2 GB: about 2 s reading the decomposition file and setting up the HeteroCL arrays, under 1 s for the local update, 2.8 s writing the 3.8 GB result. The comparison with the direct computation adds about 1.4 s (8.8 GB peak). The HeteroCL version corrects the decomposition result in place, so it only writes the updated points.
 
