@@ -1,7 +1,7 @@
 # Arguments and setup shared by every local update script (numpy_impl/ and hcl_impl/ local_update_<dim>.py).
 # Each case gives its settings as a dict (CASE_2D, CASE_3D, CASE_6D in compute/config_<dim>.py):
 #   dim, grid (function of the grid size), axes (for the help text), and the defaults of dynamics, combine,
-#   t_step and grow_within_step. Optional: grid_from_shape (function of the file's grid shape), for cases with
+#   t_step and grow_within_step. Optional: threshold (default 1e-6), grid_from_shape (function of the file's grid shape), for cases with
 #   a different number of points per dimension (4d: fewer points in v).
 import os
 import time
@@ -60,6 +60,11 @@ def add_local_update_args(parser, case, hcl=False):
                         help="true: within each time step, repeat the update until no new point changes "
                         f"(default {str(case['grow_within_step']).lower()} for {name}).")
     parser.add_argument("--t_step", type=float, default=case["t_step"], help="Time step used to compute the files.")
+    threshold = case.get("threshold", 1e-6)
+    parser.add_argument("--threshold", type=float, default=threshold,
+                        help="A point counts as corrected, and its neighbours join the update region, if it differs from "
+                        f"the decomposition by more than this (default {threshold:g} for {name}). Smaller: more points "
+                        "updated, fewer points left off.")
     if hcl:
         parser.add_argument("--cache_dir", default="kernels",
                             help="Directory of the compiled HeteroCL kernels. A kernel built before with the same "
@@ -126,7 +131,7 @@ def setup_local_update(parser, case, hcl=False):
     return args, sys, grid, leaking
 
 
-def save_and_compare(args, result_local, name, hcl=False):
+def save_and_compare(args, result_local, name, hcl=False, grid=None):
     '''
         Save the local update result (time as the first axis, like the decomposition) to
         results/result_local[_hcl]_<name>_<combine>.npy and, if --true_file is given, compare the decomposition and
@@ -140,6 +145,7 @@ def save_and_compare(args, result_local, name, hcl=False):
     print(f"Saved {path} in {time.time() - start:.2f} seconds")
     if args.true_file is not None:
         printCorrectnessStatistics(np.load(args.true_file, mmap_mode='r')[..., -1],
-                                   np.load(args.decomp_file, mmap_mode='r')[-1], result_local[-1])
+                                   np.load(args.decomp_file, mmap_mode='r')[-1], result_local[-1],
+                                   periodic_dims=() if grid is None else tuple(grid.pDim))
     else:
         print("No --true_file given, skipping the comparison with the direct computation")

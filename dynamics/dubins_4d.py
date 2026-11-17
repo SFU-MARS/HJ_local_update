@@ -1,33 +1,34 @@
 # Dynamics and optimal control of the 4D Dubins car, numpy methods (numpy_impl/local_update_4d.py) and HeteroCL
 # methods (compute/direct_4d.py, hcl_impl/local_update_4d.py): DubinsCar4D in optimized_dp without disturbance,
-# except that the car cannot brake below v = vMin (no reversing).
+# except for the speed limits: v stays in [vMin, vMax] (no reversing, top speed).
 import heterocl as hcl
 import numpy as np
 import math
 
 
 class dubins_car_4d:
-    # At v = vMin the rate of v depends on the sign of the optimal acceleration, so the dissipation coefficients
+    # At v = vMin and v = vMax the rate of v depends on the sign of the optimal acceleration, so the dissipation coefficients
     # depend on the global derivative bounds (as in HJSolver)
     DISSIPATION_USES_DERIV_BOUNDS = True
     # Only the bounds of dV/dv matter: x and y have no control, and |w| = wMax whatever the sign of dV/dtheta,
     # so the local update computes the bounds of dimension 2 only (the others are set to 0)
     DERIV_BOUNDS_DIMS = (2,)
 
-    def __init__(self, x=[0, 0, 0, 0], aMax=1, wMax=1, vMin=0.0, dMax=0.0, uMode='min', dMode='max'):
+    def __init__(self, x=[0, 0, 0, 0], aMax=1, wMax=1, vMin=0.0, vMax=2.0, dMax=0.0, uMode='min', dMode='max'):
         r'''
             State (x, y, v, theta), system dynamics:
                 \dot{x} = v*cos(theta)
                 \dot{y} = v*sin(theta)
-                \dot{v} = a, but 0 if a < 0 at v <= vMin (the car does not brake below vMin)
+                \dot{v} = a, but 0 if a < 0 at v <= vMin or a > 0 at v >= vMax (speed limits)
                 \dot{theta} = w
             aMax, wMax: control constraints |a| <= aMax, |w| <= wMax
-            vMin: lowest speed (0: no reversing)
+            vMin, vMax: lowest speed (0: no reversing) and top speed
         '''
         self.x = x
         self.aMax = aMax
         self.wMax = wMax
         self.vMin = vMin
+        self.vMax = vMax
         self.dMax = dMax
         self.uMode = uMode
         self.dMode = dMode
@@ -63,8 +64,8 @@ class dubins_car_4d:
         x_dot = f(state[2]) * f(math.cos(state[3]))
         y_dot = f(state[2]) * f(math.sin(state[3]))
         v_dot = uOpt[0]
-        if state[2] <= self.vMin and v_dot < 0:
-            v_dot = 0  # no braking below vMin
+        if (state[2] <= self.vMin and v_dot < 0) or (state[2] >= self.vMax and v_dot > 0):
+            v_dot = 0  # speed limits: no braking below vMin, no acceleration above vMax
         theta_dot = uOpt[1]
 
         return (x_dot, y_dot, v_dot, theta_dot)
@@ -121,8 +122,9 @@ class dubins_car_4d:
         x_dot[0] = state[2] * hcl.cos(state[3])
         y_dot[0] = state[2] * hcl.sin(state[3])
         v_dot[0] = uOpt[0]
-        # No braking below vMin
-        with hcl.if_(hcl.and_(state[2] <= self.vMin, v_dot[0] < 0)):
+        # Speed limits: no braking below vMin, no acceleration above vMax
+        with hcl.if_(hcl.or_(hcl.and_(state[2] <= self.vMin, v_dot[0] < 0),
+                             hcl.and_(state[2] >= self.vMax, v_dot[0] > 0))):
             v_dot[0] = 0
         theta_dot[0] = uOpt[1]
 

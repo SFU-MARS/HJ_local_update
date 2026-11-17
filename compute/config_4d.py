@@ -52,4 +52,7 @@ CASE_4D = {
     "combine": "union",
     "t_step": 0.02,
     "grow_within_step": False,
+    # Lower than the 1e-6 of the other cases: also follows corrections below 1e-6, which removes about a third of
+    # the remaining points off at a few percent more time
+    "threshold": 1e-7,
 }

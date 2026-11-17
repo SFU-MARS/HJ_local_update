@@ -18,11 +18,11 @@ def main():
     args, sys, grid, leaking = setup_local_update(argparse.ArgumentParser(), CASE_3D)
 
     # Step 4: run the local update
-    result_local = local_update_from_file(args.decomp_file, leaking, grid, sys, args.t_step,
+    result_local = local_update_from_file(args.decomp_file, leaking, grid, sys, args.t_step, threshold=args.threshold,
                                           grow_within_step=args.grow_within_step)
 
     # Step 5: save the result and compare it with the direct computation
-    save_and_compare(args, result_local, "3d")
+    save_and_compare(args, result_local, "3d", grid=grid)
 
 
 if __name__ == "__main__":

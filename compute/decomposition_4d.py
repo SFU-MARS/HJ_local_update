@@ -26,7 +26,7 @@ def decomposition(num, num_v=21, saveAllTimeStep=True, lookback_length=0.5, t_st
                   obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="low", plot=True,
                   combine="union", aMax=1, wMax=1, uMode="max", results_dir="results"):
     r'''
-        Decompose the 4D Dubins car (no braking below v = 0)
+        Decompose the 4D Dubins car with speed limits (v stays in the grid's v range [0, 2])
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{v} = a, \dot{theta} = w
         into
             subsystem 1: (x, v, theta)
@@ -63,8 +63,8 @@ def decomposition(num, num_v=21, saveAllTimeStep=True, lookback_length=0.5, t_st
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
     # Set system dynamics: uMode max avoids the set, uMode min reaches it; lowest speed = lower end of the v grid
-    sys_1 = subsys_1(aMax=aMax, wMax=wMax, vMin=0.0, dMax=0.0, uMode=uMode, dMode='min')
-    sys_2 = subsys_2(aMax=aMax, wMax=wMax, vMin=0.0, dMax=0.0, uMode=uMode, dMode='min')
+    sys_1 = subsys_1(aMax=aMax, wMax=wMax, vMin=0.0, vMax=2.0, dMax=0.0, uMode=uMode, dMode='min')
+    sys_2 = subsys_2(aMax=aMax, wMax=wMax, vMin=0.0, vMax=2.0, dMax=0.0, uMode=uMode, dMode='min')
 
     # Backward reachable tube of the obstacle
     compMethods = {"TargetSetMode": "None"}

@@ -1,4 +1,4 @@
-# 3D subsystems of the 4D Dubins car (x, y, v, theta), no braking below v = 0, used by the 4d decomposition:
+# 3D subsystems of the 4D Dubins car (x, y, v, theta) with speed limits v in [0, 2], used by the 4d decomposition:
 #   subsys_1: (x, v, theta),  subsys_2: (y, v, theta)
 # Each has HeteroCL methods (for HJSolver) and numpy methods.
 import heterocl as hcl
@@ -6,19 +6,20 @@ import math
 
 
 class subsys_1:
-    def __init__(self, x=[0, 0, 0], aMax=1, wMax=1, vMin=0.0, dMax=0.0, uMode='min', dMode='max'):
+    def __init__(self, x=[0, 0, 0], aMax=1, wMax=1, vMin=0.0, vMax=2.0, dMax=0.0, uMode='min', dMode='max'):
         r'''
             System dynamics:
                 \dot{x} = v*cos(theta)
-                \dot{v} = a, but 0 if a < 0 at v <= vMin (the car does not brake below vMin)
+                \dot{v} = a, but 0 if a < 0 at v <= vMin or a > 0 at v >= vMax (speed limits)
                 \dot{theta} = w
             aMax, wMax: control constraints |a| <= aMax, |w| <= wMax
-            vMin: lowest speed (0: no reversing)
+            vMin, vMax: lowest speed (0: no reversing) and top speed
         '''
         self.x = x
         self.aMax = aMax
         self.wMax = wMax
         self.vMin = vMin
+        self.vMax = vMax
         self.dMax = dMax
         self.uMode = uMode
         self.dMode = dMode
@@ -55,8 +56,9 @@ class subsys_1:
 
         x_dot[0] = state[1] * hcl.cos(state[2])
         v_dot[0] = uOpt[0]
-        # No braking below vMin
-        with hcl.if_(hcl.and_(state[1] <= self.vMin, v_dot[0] < 0)):
+        # Speed limits: no braking below vMin, no acceleration above vMax
+        with hcl.if_(hcl.or_(hcl.and_(state[1] <= self.vMin, v_dot[0] < 0),
+                             hcl.and_(state[1] >= self.vMax, v_dot[0] > 0))):
             v_dot[0] = 0
         theta_dot[0] = uOpt[1]
 
@@ -84,27 +86,28 @@ class subsys_1:
     def dynamics_numpy(self, t, state, uOpt, dOpt):
         x_dot = state[1] * math.cos(state[2])
         v_dot = uOpt[0]
-        if state[1] <= self.vMin and v_dot < 0:
-            v_dot = 0  # no braking below vMin
+        if (state[1] <= self.vMin and v_dot < 0) or (state[1] >= self.vMax and v_dot > 0):
+            v_dot = 0  # speed limits: no braking below vMin, no acceleration above vMax
         theta_dot = uOpt[1]
 
         return (x_dot, v_dot, theta_dot)
 
 
 class subsys_2:
-    def __init__(self, x=[0, 0, 0], aMax=1, wMax=1, vMin=0.0, dMax=0.0, uMode='min', dMode='max'):
+    def __init__(self, x=[0, 0, 0], aMax=1, wMax=1, vMin=0.0, vMax=2.0, dMax=0.0, uMode='min', dMode='max'):
         r'''
             System dynamics:
                 \dot{y} = v*sin(theta)
-                \dot{v} = a, but 0 if a < 0 at v <= vMin (the car does not brake below vMin)
+                \dot{v} = a, but 0 if a < 0 at v <= vMin or a > 0 at v >= vMax (speed limits)
                 \dot{theta} = w
             aMax, wMax: control constraints |a| <= aMax, |w| <= wMax
-            vMin: lowest speed (0: no reversing)
+            vMin, vMax: lowest speed (0: no reversing) and top speed
         '''
         self.x = x
         self.aMax = aMax
         self.wMax = wMax
         self.vMin = vMin
+        self.vMax = vMax
         self.dMax = dMax
         self.uMode = uMode
         self.dMode = dMode
@@ -141,8 +144,9 @@ class subsys_2:
 
         y_dot[0] = state[1] * hcl.sin(state[2])
         v_dot[0] = uOpt[0]
-        # No braking below vMin
-        with hcl.if_(hcl.and_(state[1] <= self.vMin, v_dot[0] < 0)):
+        # Speed limits: no braking below vMin, no acceleration above vMax
+        with hcl.if_(hcl.or_(hcl.and_(state[1] <= self.vMin, v_dot[0] < 0),
+                             hcl.and_(state[1] >= self.vMax, v_dot[0] > 0))):
             v_dot[0] = 0
         theta_dot[0] = uOpt[1]
 
@@ -170,8 +174,8 @@ class subsys_2:
     def dynamics_numpy(self, t, state, uOpt, dOpt):
         y_dot = state[1] * math.sin(state[2])
         v_dot = uOpt[0]
-        if state[1] <= self.vMin and v_dot < 0:
-            v_dot = 0  # no braking below vMin
+        if (state[1] <= self.vMin and v_dot < 0) or (state[1] >= self.vMax and v_dot > 0):
+            v_dot = 0  # speed limits: no braking below vMin, no acceleration above vMax
         theta_dot = uOpt[1]
 
         return (y_dot, v_dot, theta_dot)

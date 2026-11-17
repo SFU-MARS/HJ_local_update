@@ -24,7 +24,7 @@ def direct_comp(num, num_v=21, saveAllTimeStep=True, lookback_length=0.5, t_step
                 combine="union", aMax=1, wMax=1, uMode="max", results_dir="results"):
     r'''
         Directly solve the 4D Dubins car (dynamics/dubins_4d.py: DubinsCar4D in optimized_dp without disturbance,
-        but the car cannot brake below v = 0, the lower end of the grid's v range)
+        but with speed limits: v stays in the grid's v range [0, 2])
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{v} = a, \dot{theta} = w
         with the optimized_dp HJSolver. The set is the same as in direct_3d.py, built from the
         rectangles x_min <= x <= x_max and y_min <= y <= y_max (v and theta unbounded):
@@ -56,7 +56,7 @@ def direct_comp(num, num_v=21, saveAllTimeStep=True, lookback_length=0.5, t_step
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
     # Set system dynamics: uMode max avoids the set, uMode min reaches it; lowest speed = lower end of the v grid
-    sys = dubins_car_4d(aMax=aMax, wMax=wMax, vMin=float(grid_min[2]), dMax=0.0, uMode=uMode, dMode="min")
+    sys = dubins_car_4d(aMax=aMax, wMax=wMax, vMin=float(grid_min[2]), vMax=float(grid_max[2]), dMax=0.0, uMode=uMode, dMode="min")
 
     # Same computation method as direct_3d.py
     compMethods = {"TargetSetMode": "None"}
