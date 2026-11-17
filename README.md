@@ -108,23 +108,6 @@ The default `--t_step 0.02` is below HJSolver's CFL bound with 41 points in x, y
 | 41⁴ | union | 0.01 / 0.5 (50) | 1813532 / – / 297 | 2.8 / – / 8.6e-6 | 1.5 s | 0.12 s | – / 0.37 s |
 | 41⁴ | intersection | 0.01 / 0.5 (50) | 1781017 / – / 0 | 0.72 / – / 9.5e-7 | 1.4 s | 0.14 s | – / 0.31 s |
 
-The 41 × 41 × 15 × 41 rows use `--grid_size_v 15`: no faster than the default, with more points off (96 vs 28 for union), so 21 points in v stay the default. The 41⁴ rows use `--grid_size_v 41 --t_step 0.01`. The local update fixes every point with the wrong sign (8540 for union and 7398 for intersection with the defaults). Away from the grid edges (2 points from every x, y and v edge left out, printed by the local update as "Away from the grid edges") no point is off on any grid. Largest error after the local update with the defaults: 1.9e-6 (union) and 9.5e-7 (intersection); at most 8.6e-6 at 41⁴. numpy is not run on the 41-point grids.
-
-**Why some union points are still off.** They are a few 32-bit ULPs off, in the band of 2 grid points along the x and y edges. The local update and HJSolver round differently in the last bit (within 1 ULP after the first step; most likely where the compiler fuses a multiply and an add, which HJSolver does in numpy), and this grows where the value function grows. At an edge HJSolver extrapolates with a value farther from the set (`V + |ΔV| sign(V)`), so leaving the grid looks safe: the avoiding control of union (`uMode` max) heads out of the grid there and V keeps growing, the reaching control of intersection (`uMode` min) does not. Updating every point at every time step does not remove these points, so the update region does not miss them.
-
-**Speed limits.** Without them the car leaves the grid in v as well, and at v = 2 union's value function grows the same way: with only the lower limit, 242 union points stay off with the defaults (5.2e-6 at most), with both limits 28 (1.9e-6). At v = 0 and v = 2 the rate of v is 0 or aMax depending on the sign of the optimal acceleration, so the dissipation coefficient of v depends on the global bounds of dV/dv, and the local update computes these at each time step as HJSolver does (`DERIV_BOUNDS_DIMS` in the dynamics class: only that dimension, in parallel in the HeteroCL kernel).
-
-4d uses `--threshold 1e-7` (in its parameter files and `CASE_4D`), the other cases 1e-6: a point whose correction is below 1e-6 still adds its neighbours to the update region. Without speed limit at v = 2 this took union from 354 to 242 points off and intersection from 2 to 0, for about 7% more time; a threshold of 0 gives the same as 1e-7.
-
-**Lookback length (defaults otherwise).** The horizon has the largest effect on the remaining points; 0.5 (25 time steps, as in 3d) is the default:
-
-| Lookback (time steps) | Points off > 1e-6 after the local update: union / intersection | Max error: union / intersection | Direct computation (odp): union | Local update (HeteroCL): union / intersection |
-|---|---|---|---|---|
-| 0.4 (20) | 4 / 0 | 1.4e-6 / 4.8e-7 | 0.36 s | 0.091 s / 0.080 s |
-| **0.5 (25)** | 28 / 0 | 1.9e-6 / 9.5e-7 | 0.52 s | 0.11 s / 0.11 s |
-| 0.6 (30) | 119 / 0 | 3.3e-6 / 7.2e-7 | 0.57 s | 0.14 s / 0.13 s |
-| 0.8 (40) | 735 / 10 | 1.1e-5 / 1.4e-6 | 0.69 s | 0.19 s / 0.18 s |
-
 ### Example: 6D Quadrotor
 
 State (x, y, vx, vy, θ, w), split into subsystems (x, vx, θ, w) and (y, vy, θ, w), which share θ, w and the controls. Union: the obstacle x ≤ 0 or y ≤ 0, avoided (`uMode` `max`). Intersection: the target x ≤ 0 and y ≤ 0, reached (`uMode` `min`).
