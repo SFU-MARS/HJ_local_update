@@ -8,7 +8,7 @@ from odp.Shapes import *
 from odp.solver import HJSolver
 
 from compute.hj_solver_wrapper import solve_hj
-from odp.dynamics import DubinsCar4D
+from dynamics.dubins_4d import dubins_car_4d
 
 from odp.Plots import PlotOptions
 from odp.Plots import visualize_plots
@@ -19,16 +19,18 @@ import os
 from common.combine import check_combine
 
 
-def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.01,
+def direct_comp(num, num_v=21, saveAllTimeStep=True, lookback_length=0.5, t_step=0.02,
                 obstacle_min=(-0.5, -0.5), obstacle_max=(0.5, 0.5), accuracy="low", plot=True,
                 combine="union", aMax=1, wMax=1, uMode="max", results_dir="results"):
     r'''
-        Directly solve the 4D Dubins car (DubinsCar4D in optimized_dp, no disturbance)
+        Directly solve the 4D Dubins car (dynamics/dubins_4d.py: DubinsCar4D in optimized_dp without disturbance,
+        but the car cannot brake below v = 0, the lower end of the grid's v range)
             \dot{x} = v*cos(theta), \dot{y} = v*sin(theta), \dot{v} = a, \dot{theta} = w
         with the optimized_dp HJSolver. The set is the same as in direct_3d.py, built from the
         rectangles x_min <= x <= x_max and y_min <= y <= y_max (v and theta unbounded):
             combine="union": union of the rectangles, V = min(V1, V2)
             combine="intersection": intersection of the rectangles (a square), V = max(V1, V2)
+            num, num_v: grid points of x, y and theta, and of v
             aMax, wMax: acceleration and turn rate bounds, |a| <= aMax, |w| <= wMax
             uMode: "max" (control avoids the set) or "min" (control reaches it)
         Saves <results_dir>/result_direct_4d_<combine>.npy.
@@ -39,7 +41,7 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.01,
     grid_min = np.array([-4.0, -4.0, 0.0, -math.pi])
     grid_max = np.array([4.0, 4.0, 2.0, math.pi])
     dims = grid_min.shape[0]
-    N = np.array([num, num, num, num])
+    N = np.array([num, num, num_v, num])
     g = Grid(grid_min, grid_max, dims, N, periodicDims=[3])
 
     # Initialize value function (negative inside the set)
@@ -53,10 +55,8 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.01,
     small_number = 1e-5
     tau = np.arange(start=0, stop=lookback_length + small_number, step=t_step)
 
-    # Set system dynamics: uMode max avoids the set, uMode min reaches it.
-    # DubinsCar4D needs dMode opposite to uMode; the disturbance bounds are zero.
-    sys = DubinsCar4D(uMin=[-aMax, -wMax], uMax=[aMax, wMax], dMin=[0.0, 0.0], dMax=[0.0, 0.0],
-                      uMode=uMode, dMode="min" if uMode == "max" else "max")
+    # Set system dynamics: uMode max avoids the set, uMode min reaches it; lowest speed = lower end of the v grid
+    sys = dubins_car_4d(aMax=aMax, wMax=wMax, vMin=float(grid_min[2]), dMax=0.0, uMode=uMode, dMode="min")
 
     # Same computation method as direct_3d.py
     compMethods = {"TargetSetMode": "None"}
@@ -81,7 +81,7 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.01,
     # Visualization of the (x, y, theta) slice at the middle v
     if plot:
         os.makedirs('plots', exist_ok=True)
-        po = PlotOptions(do_plot=False, plot_type="set", plotDims=[0,1,3], slicesCut=[num // 2], colorscale="Bluered",
+        po = PlotOptions(do_plot=False, plot_type="set", plotDims=[0,1,3], slicesCut=[num_v // 2], colorscale="Bluered",
                         save_fig=True, filename=f"plots/direct_result_4d_{combine}", interactive_html=True)
         visualize_plots(result, g, po)
 
@@ -90,18 +90,19 @@ def direct_comp(num, saveAllTimeStep=True, lookback_length=1.0, t_step=0.01,
 
 def main():
     '''
-        Command-line version, same arguments as direct_3d.py except --dynamics (always DubinsCar4D):
+        Command-line version, same arguments as direct_3d.py except --dynamics (always dubins_car_4d):
         --dynamics_params takes aMax, wMax and uMode.
     '''
     import argparse
     from common.params import json_object
     parser = argparse.ArgumentParser()
-    parser.add_argument("--grid_size", type=int, default=41, help="Grid points per dimension (default 41).")
+    parser.add_argument("--grid_size", type=int, default=41, help="Grid points of x, y and theta (default 41).")
+    parser.add_argument("--grid_size_v", type=int, default=21, help="Grid points of v (default 21).")
     parser.add_argument("--combine", choices=["union", "intersection"], default="union",
                         help="union = min(V1, V2), intersection = max(V1, V2). The control mode is uMode in --dynamics_params.")
-    parser.add_argument("--t_step", type=float, default=0.01, help="Time step.")
-    parser.add_argument("--lookback_length", type=float, default=1.0,
-                        help="Look-back length, lookback_length / t_step time steps.")
+    parser.add_argument("--t_step", type=float, default=0.02, help="Time step (default 0.02, below HJSolver's CFL bound with 21 v points).")
+    parser.add_argument("--lookback_length", type=float, default=0.5,
+                        help="Look-back length, lookback_length / t_step time steps (default 0.5: 25 steps).")
     parser.add_argument("--results_dir", default="results", help="Directory of the saved results.")
     parser.add_argument("--dynamics_params", type=json_object, default={},
                         help="aMax, wMax and uMode as a JSON object, e.g. '{\"aMax\": 1, \"wMax\": 1, \"uMode\": \"min\"}' "
@@ -115,9 +116,9 @@ def main():
     params = {"aMax": 1, "wMax": 1, "uMode": "max", **args.dynamics_params}
     if params["uMode"] not in ("min", "max"):
         parser.error(f"--dynamics_params: uMode must be 'min' or 'max', got {params['uMode']!r}")
-    print(f"Dynamics: DubinsCar4D {params}")
+    print(f"Dynamics: dubins_4d {params}")
     try:
-        direct_comp(args.grid_size, saveAllTimeStep=True, lookback_length=args.lookback_length, t_step=args.t_step,
+        direct_comp(args.grid_size, num_v=args.grid_size_v, saveAllTimeStep=True, lookback_length=args.lookback_length, t_step=args.t_step,
              accuracy=args.accuracy, plot=args.plot, combine=args.combine, aMax=params["aMax"], wMax=params["wMax"],
              uMode=params["uMode"], results_dir=args.results_dir)
     except ValueError as e:  # HJSolver needed more than one step per time step

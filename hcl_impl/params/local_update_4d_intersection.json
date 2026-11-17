@@ -8,6 +8,6 @@
     "dynamics_params": {"aMax": 1, "wMax": 1, "uMode": "min"},
     "leaking_mode": "smallest",
     "grow_within_step": false,
-    "t_step": 0.01,
+    "t_step": 0.02,
     "cache_dir": "kernels"
 }

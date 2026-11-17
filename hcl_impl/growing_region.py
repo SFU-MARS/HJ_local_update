@@ -144,7 +144,7 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
         # Global derivative bounds of V[s-1], for the dissipation like HJSolver (only if the dynamics need them)
         deriv_min = deriv_max = None
         if sys.DISSIPATION_USES_DERIV_BOUNDS:
-            deriv_min, deriv_max = deriv_bounds_hcl(V_prev, grid)
+            deriv_min, deriv_max = deriv_bounds_hcl(V_prev, grid, getattr(sys, "DERIV_BOUNDS_DIMS", None))
 
         def update(idx):
             # One HJSolver step at idx (the dynamics do not depend on t). If the new value differs from the
@@ -218,6 +218,11 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
         s[s_U].parallel(s[s_U].fuse(s_U.i0, s_U.i1))
     else:
         s[s_U].parallel(s_U.i0)
+    # The derivative bounds (only if the dynamics need them): in parallel over the first grid dimension, each
+    # thread writes its own slice (common/hj_update.py deriv_bounds_hcl)
+    if sys.DISSIPATION_USES_DERIV_BOUNDS:
+        s_B = graph_create.Bounds
+        s[s_B].parallel(s_B.b0)
     return hcl.build(s)
 
 

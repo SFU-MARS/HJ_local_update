@@ -26,13 +26,19 @@ def abs_hcl(x):
     return hcl.select(x > 0, x, -x)
 
 
-def deriv_bounds_numpy(data, grid):
+def deriv_bounds_numpy(data, grid, dims=None):
     '''
         Global min and max of the left and right spatial derivatives in each dimension.
+            dims: the dimensions to compute (default all); the others get 0, for dynamics whose dissipation
+                  coefficients only depend on some of them (DERIV_BOUNDS_DIMS)
         Returns (deriv_min, deriv_max), one value per dimension.
     '''
     deriv_min, deriv_max = [], []
     for dim in range(data.ndim):
+        if dims is not None and dim not in dims:
+            deriv_min.append(DTYPE(0))
+            deriv_max.append(DTYPE(0))
+            continue
         left, right = spa_deriv_arrays(data, grid, dim)
         deriv_min.append(min(left.min(), right.min()))
         deriv_max.append(max(left.max(), right.max()))
@@ -82,27 +88,46 @@ def for_all_points(shape, body, prefix="p"):
     loop(0, [])
 
 
-def deriv_bounds_hcl(V, grid):
+def deriv_bounds_hcl(V, grid, dims=None):
     '''
         Inside a HeteroCL kernel: global min and max of the left and right spatial derivatives of V in each
-        dimension (sequential loops over the grid, in a stage named "Bounds"). Call it at the top level of the
-        kernel, not inside a stage, so the returned scalars can be used by the following stages.
+        dimension. Call it at the top level of the kernel, not inside a stage, so the returned scalars can be
+        used by the following stages. Two stages:
+            "Bounds" (loop b0 over the first grid dimension, which the kernel may run in parallel): the min and
+                     max of each slice b0, in arrays indexed by b0, so the threads never write the same element
+            "BoundsReduce" (sequential): the min and max over the slices
+        Min and max do not depend on the order, so the result is the same as one sequential loop.
+            dims: the dimensions to compute (default all); the others get 0, for dynamics whose dissipation
+                  coefficients only depend on some of them (DERIV_BOUNDS_DIMS)
         Returns (deriv_min, deriv_max), lists of HeteroCL scalars.
     '''
     shape = tuple(int(n) for n in grid.pts_each_dim)
-    deriv_min = [hcl.scalar(1e9, f"deriv_min{d}", dtype=V.dtype) for d in range(len(shape))]
-    deriv_max = [hcl.scalar(-1e9, f"deriv_max{d}", dtype=V.dtype) for d in range(len(shape))]
+    dims = list(range(len(shape))) if dims is None else list(dims)
+    deriv_min = [hcl.scalar(1e9 if d in dims else 0, f"deriv_min{d}", dtype=V.dtype) for d in range(len(shape))]
+    deriv_max = [hcl.scalar(-1e9 if d in dims else 0, f"deriv_max{d}", dtype=V.dtype) for d in range(len(shape))]
+    # Per-slice bounds, one element per index of the first grid dimension
+    slice_min = {d: hcl.compute((shape[0],), lambda i: 1e9, name=f"slice_min{d}", dtype=V.dtype) for d in dims}
+    slice_max = {d: hcl.compute((shape[0],), lambda i: -1e9, name=f"slice_max{d}", dtype=V.dtype) for d in dims}
 
     def body(index):
-        for dim in range(len(shape)):
+        b0 = index[0]
+        for dim in dims:
             dV_L, dV_R = spa_deriv_hcl(index, V, grid, dim)
             for value in (dV_L, dV_R):
-                with hcl.if_(value < deriv_min[dim][0]):
-                    deriv_min[dim][0] = value
-                with hcl.if_(value > deriv_max[dim][0]):
-                    deriv_max[dim][0] = value
+                with hcl.if_(value < slice_min[dim][b0]):
+                    slice_min[dim][b0] = value
+                with hcl.if_(value > slice_max[dim][b0]):
+                    slice_max[dim][b0] = value
     with hcl.Stage("Bounds"):
-        for_all_points(shape, body, prefix="b")
+        with hcl.for_(0, shape[0], name="b0") as b0:
+            for_all_points(shape[1:], lambda rest: body([b0] + rest), prefix="b_")
+    with hcl.Stage("BoundsReduce"):
+        with hcl.for_(0, shape[0], name="r0") as r0:
+            for dim in dims:
+                with hcl.if_(slice_min[dim][r0] < deriv_min[dim][0]):
+                    deriv_min[dim][0] = slice_min[dim][r0]
+                with hcl.if_(slice_max[dim][r0] > deriv_max[dim][0]):
+                    deriv_max[dim][0] = slice_max[dim][r0]
     return deriv_min, deriv_max
 
 

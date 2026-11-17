@@ -8,6 +8,8 @@
 #                                                    control at the global min/max derivatives (deriv_min, deriv_max)
 #   DISSIPATION_USES_DERIV_BOUNDS                    True if those coefficients depend on deriv_min/deriv_max,
 #                                                    then the local update computes them (common/hj_update.py)
+#   DERIV_BOUNDS_DIMS (optional)                     the dimensions whose bounds the coefficients use (default all);
+#                                                    only those are computed, the others are 0
 # Subsystem classes need the HeteroCL methods opt_ctrl, opt_dstb, dynamics for HJSolver.
 import inspect
 

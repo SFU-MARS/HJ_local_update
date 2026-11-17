@@ -48,7 +48,8 @@ def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e
 
         # Step 2b: start from the decomposition result, recompute one HJSolver step inside the region
         # (with the global derivative bounds of the previous step if the dissipation needs them)
-        bounds = deriv_bounds_numpy(data, grid) if sys.DISSIPATION_USES_DERIV_BOUNDS else (None, None)
+        bounds = (deriv_bounds_numpy(data, grid, getattr(sys, "DERIV_BOUNDS_DIMS", None))
+                  if sys.DISSIPATION_USES_DERIV_BOUNDS else (None, None))
         new_data = result_decomp[i].copy()
         done = np.zeros(region.shape, dtype=bool)
         while True:

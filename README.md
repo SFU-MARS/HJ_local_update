@@ -17,13 +17,13 @@ In the tables below, times are the time-stepping loops only, measured on a machi
 
 ### Time step and lookback length of each example
 
-The lookback length (time horizon) sets the number of time steps, `lookback_length / t_step`, and matters as much as the grid: a longer horizon lets the decomposition error spread further and gives 32-bit rounding more steps to grow, so the local update corrects more points and takes longer (see the 4D lookback study below). `t_step` is limited by HJSolver's CFL bound. Use the same `--t_step` and `--lookback_length` for the direct computation and the decomposition; the local update reads the number of steps from the files and takes `t_step` from its parameter file.
+The lookback length (time horizon) sets the number of time steps, `lookback_length / t_step`, and matters as much as the grid: a longer horizon lets the decomposition error spread further and gives 32-bit rounding more steps to grow, so the local update corrects more points and takes longer. `t_step` is limited by HJSolver's CFL bound. Use the same `--t_step` and `--lookback_length` for the direct computation and the decomposition; the local update reads the number of steps from the files and takes `t_step` from its parameter file.
 
 | Example | Grid (default) | `--t_step` | `--lookback_length` | Time steps |
 |---|---|---|---|---|
 | 2D coupled control | 101² | 0.02 | 0.2 | 10 |
 | 3D Dubins car | 41³ | 0.04 | 1.0 | 25 |
-| 4D Dubins car | 41⁴ | 0.01 | 1.0 | 100 |
+| 4D Dubins car | 41 × 41 × 21 × 41 (21 points in v) | 0.02 | 0.5 | 25 |
 | 6D quadrotor | 21⁶ | 0.01 | 0.1 | 10 |
 
 ### Example: 2D Coupled Control
@@ -80,44 +80,44 @@ The remaining points are 32-bit rounding that builds up over the 25 time steps: 
 
 ### Example: 4D Dubins Car
 
-State (x, y, v, θ): ẋ = v cos θ, ẏ = v sin θ, v̇ = a, θ̇ = w with |a| ≤ aMax, |w| ≤ wMax (optimized_dp's `DubinsCar4D`, no disturbance). Grid x, y ∈ [−4, 4], v ∈ [0, 2], θ ∈ [−π, π] (periodic). Same sets as 3d, from the rectangles |x| ≤ 0.5 and |y| ≤ 0.5 (v and θ unbounded), split into subsystems (x, v, θ) and (y, v, θ), which share v, θ and the controls. `compute/direct_4d.py` and `compute/decomposition_4d.py` mirror the 3d scripts; `--dynamics_params` takes `aMax`, `wMax` and `uMode` (default 1, 1 and `max`), and there is no `--dynamics`.
+State (x, y, v, θ): ẋ = v cos θ, ẏ = v sin θ, v̇ = a, θ̇ = w with |a| ≤ aMax = 1, |w| ≤ wMax = 1, and the car does not brake below v = 0 (v̇ = 0 if a < 0 at v = 0: no reversing). Otherwise the same as optimized_dp's `DubinsCar4D` without disturbance; there is no upper speed limit. Grid x, y ∈ [−4, 4], v ∈ [0, 2], θ ∈ [−π, π] (periodic), with `--grid_size` points in x, y and θ and `--grid_size_v` points in v (default 41 and 21, so v has a spacing of 0.1). Same sets as 3d, from the rectangles |x| ≤ 0.5 and |y| ≤ 0.5 (v and θ unbounded), split into subsystems (x, v, θ) and (y, v, θ), which share v, θ and the controls. `compute/direct_4d.py` and `compute/decomposition_4d.py` mirror the 3d scripts; `--dynamics_params` takes `aMax`, `wMax` and `uMode` (default 1, 1 and `max`), and there is no `--dynamics`. All three steps use the same dynamics: the full system `dubins_car_4d` in [dynamics/dubins_4d.py](dynamics/dubins_4d.py) (direct computation and local updates) and its subsystems in [subdynamics/dubins_4d.py](subdynamics/dubins_4d.py).
 
 ```bash
 # 1. generate: results/result_{direct,decomp}_4d_union.npy, results/init_{1,2}_4d.npy
-python -m compute.direct_4d --grid_size 41 --t_step 0.01 --lookback_length 1.0 --combine union
-python -m compute.decomposition_4d --grid_size 41 --t_step 0.01 --lookback_length 1.0 --combine union
+python -m compute.direct_4d --grid_size 41 --grid_size_v 21 --t_step 0.02 --lookback_length 0.5 --combine union
+python -m compute.decomposition_4d --grid_size 41 --grid_size_v 21 --t_step 0.02 --lookback_length 0.5 --combine union
 # 2. local update
-#   option 1: numpy (small grids only, e.g. --grid_size 15: about 2 minutes)
+#   option 1: numpy (small grids only, e.g. --grid_size 15 --grid_size_v 11: about 30 seconds)
 python -m numpy_impl.local_update_4d --params numpy_impl/params/local_update_4d_union.json
 #   option 2: parallel HeteroCL
 python -m hcl_impl.local_update_4d --params hcl_impl/params/local_update_4d_union.json
 ```
 
-For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both compute scripts and `local_update_4d_intersection.json` (which sets `uMode` to `min`). The local updates use the full system class `dubins_4d` in [dynamics/dubins_4d.py](dynamics/dubins_4d.py), the same arithmetic as `DubinsCar4D`.
+For intersection (reach), use `--combine intersection --dynamics_params '{"uMode": "min"}'` for both compute scripts and `local_update_4d_intersection.json` (which sets `uMode` to `min`).
 
-The default `--t_step 0.01` is below HJSolver's CFL bound at 41⁴ (about 0.017, mostly set by the v spacing of 0.05).
+The default `--t_step 0.02` is below HJSolver's CFL bound with 41 points in x, y, θ and 21 in v (0.025 is above). With 41 points in v, the v spacing of 0.05 lowers the bound to about 0.017, so `t_step` has to be 0.01 and the same horizon takes twice the steps.
 
 | Grid | Combine | `t_step` / lookback (time steps) | Points off > 1e-6 at the final time: decomposition / numpy / HeteroCL | Direct computation (odp) | Decomposition (odp) | Local update: numpy / HeteroCL |
 |---|---|---|---|---|---|---|
-| 15⁴ | union | 0.01 / 1.0 (100) | 49895 / 816 / 489 | 0.10 s | 0.10 s | 118 s / 0.091 s |
-| 41⁴ | union | 0.01 / 1.0 (100) | 2516636 / – / 125870 | 3.0 s | 0.22 s | – / 0.55 s |
-| 41⁴ | intersection | 0.01 / 1.0 (100) | 2503686 / – / 1005 | 3.0 s | 0.18 s | – / 0.55 s |
+| 15 × 15 × 11 × 15 | union | 0.02 / 0.5 (25) | 34222 / 7 / 3 | 0.055 s | 0.071 s | 25.8 s / 0.0065 s |
+| 15 × 15 × 11 × 15 | intersection | 0.02 / 0.5 (25) | 33441 / 0 / 0 | 0.059 s | 0.072 s | 26.0 s / 0.0081 s |
+| **41 × 41 × 21 × 41 (default)** | union | 0.02 / 0.5 (25) | 879638 / – / 354 | 0.51 s | 0.079 s | – / 0.11 s |
+| **41 × 41 × 21 × 41 (default)** | intersection | 0.02 / 0.5 (25) | 866516 / – / 2 | 0.45 s | 0.081 s | – / 0.094 s |
+| 41⁴ | union | 0.01 / 0.5 (50) | 1817101 / – / 4741 | 1.5 s | 0.13 s | – / 0.32 s |
+| 41⁴ | intersection | 0.01 / 0.5 (50) | 1781025 / – / 140 | 1.8 s | 0.12 s | – / 0.34 s |
 
-The largest differences (up to 11.8) are at the grid edges: the direct computation grows to 17 at the corners of high x, y and v (the initial value is at most 3.5), from HJSolver's extrapolation past the edge of the grid, where the car speeds up out of v ∈ [0, 2]. Within x, y ∈ [−2, 2] and v ∈ [0.5, 1.5], the decomposition is off by at most 0.65 (3d: up to 1.6).
+The 41⁴ rows use `--grid_size_v 41 --t_step 0.01`. The local update fixes every point with the wrong sign (8618 for union and 7427 for intersection with the defaults). The remaining points are 32-bit rounding: the local update matches HJSolver to within 1 ULP after the first step, and this grows over the time steps where the value function grows at the grid edges (from HJSolver's extrapolation past the edge of the grid). Largest error after the local update with the defaults: 5.2e-6 (union) and 1.4e-6 (intersection); at most 2.9e-6 on the small grid, 2.1e-5 at 41⁴. numpy is not run on the 41-point grids.
 
-The local update fixes every point with the wrong sign (17623 at 41⁴, 366 at 15⁴) and brings the mean error from 0.16 to 6.7e-7 (41⁴). The remaining points are 32-bit rounding: after the first step every point is within 2.4e-7 of the direct computation, but over the 100 steps the rounding grows where the value function grows at the grid edges, up to 8.3e-4 at 41⁴ (1.6e-5 numpy and 1.2e-5 HeteroCL at 15⁴; numpy and HeteroCL drift alike). Intersection, where the value function does not grow at the edges, stays within 4.4e-6 (57569 wrong signs fixed). The local update recomputes 66% of the point updates of the direct computation (187 of 283 million at 41⁴). numpy is not run at 41⁴.
+**Lookback length (defaults otherwise).** The horizon has the largest effect on the remaining points; 0.5 (25 time steps, as in 3d) is the default:
 
-**Lookback study (41⁴, union, HeteroCL).** The largest `t_step` HJSolver allows at 41⁴ is 0.017 (0.0175 already splits steps); keep the lookback a whole multiple of `t_step`, or the last time step stops short of it.
+| Lookback (time steps) | Points off > 1e-6 after the local update: union / intersection | Max error: union / intersection | Direct computation (odp): union | Local update (HeteroCL): union / intersection |
+|---|---|---|---|---|
+| 0.4 (20) | 96 / 0 | 3.3e-6 / 9.5e-7 | 0.34 s | 0.083 s / 0.081 s |
+| **0.5 (25)** | 354 / 2 | 5.2e-6 / 1.4e-6 | 0.46 s | 0.092 s / 0.090 s |
+| 0.6 (30) | 1203 / 10 | 1.4e-5 / 1.4e-6 | 0.53 s | 0.14 s / 0.12 s |
+| 0.8 (40) | 7037 / 48 | 4.1e-5 / 1.9e-6 | 0.70 s | 0.19 s / 0.15 s |
 
-| `t_step` | Lookback | Time steps | Direct computation (odp) | Local update (HeteroCL) | Points off > 1e-6: decomposition / local update | Max error after local update |
-|---|---|---|---|---|---|---|
-| 0.016 | 0.4 | 25 | 0.95 s | 0.11 s | 1541366 / 2049 | 3.9e-5 |
-| 0.016 | 0.8 | 50 | 1.5 s | 0.30 s | 2235263 / 56767 | 5.6e-4 |
-| 0.0125 | 1.0 | 80 | 2.5 s | 0.49 s | 2498364 / 129548 | 3.1e-4 |
-| 0.017 | 1.0 | 59 | 1.8 s | 0.35 s | 2462992 / 113548 | 8.0e-4 |
-| 0.01 (default) | 1.0 | 100 | 3.0 s | 0.55 s | 2516636 / 125870 | 8.3e-4 |
-
-The lookback matters most: doubling it from 0.4 to 0.8 leaves about 28 times as many points off. For the same horizon, a time step at the CFL limit is not more accurate (0.017 vs 0.0125). Every setting fixes all points with the wrong sign. With 3D's `t_step` 0.04 and lookback 1.0, the largest 4D grid within the CFL bound is 18⁴.
+**Lowest speed.** The car does not brake below v = 0, the lower end of the grid; at the upper end (v = 2) HJSolver extrapolates as for plain `DubinsCar4D`. At v = 0 the rate of v is 0 or aMax depending on the sign of the optimal acceleration, so the dissipation coefficient of v depends on the global bounds of dV/dv, and the local update computes these at each time step as HJSolver does (`DERIV_BOUNDS_DIMS` in the dynamics class: only that dimension, in parallel in the HeteroCL kernel).
 
 ### Example: 6D Quadrotor
 
@@ -161,7 +161,7 @@ Each local update reads its arguments from a JSON file in `numpy_impl/params/` o
 | `--true_file` | all | none | Direct computation result, for the comparison |
 | `--combine` | all | 2d: `intersection`, 3d/4d/6d: `union` | `union` or `intersection` |
 | `--dynamics`, `--dynamics_params` | all | the case's system, `{}` | Dynamics name from [dynamics/__init__.py](dynamics/__init__.py) and its parameters as JSON, e.g. `{"uMax": 1.5, "uMode": "min"}`; the same as for the files. `uMode` is the control mode, `max` (avoid, default) or `min` (reach), independent of `--combine` |
-| `--t_step` | all | 2d: `0.02`, 3d: `0.04`, 4d/6d: `0.01` | Time step used to compute the files |
+| `--t_step` | all | 2d: `0.02`, 3d: `0.04`, 4d: `0.02`, 6d: `0.01` | Time step used to compute the files |
 | `--init_1`, `--init_2` | all | `results/init_{1,2}_<dim>.npy` | Subsystem values at t = 0, for the leaking set |
 | `--leaking_mode` | all | `smallest` | `smallest` (V1 = V2 and its neighbours) or `delta` (\|V1 − V2\| < δ) |
 | `--grow_within_step` | all | 2d: `true`, 3d/4d/6d: `false` | Also grow the region within each time step |
@@ -171,11 +171,12 @@ Compute scripts (`compute/direct_<dim>.py`, `compute/decomposition_<dim>.py`), t
 
 | Argument | Default | Description |
 |---|---|---|
-| `--grid_size` | 2d: `101`, 3d/4d: `41`, 6d: `21` | Grid points per dimension |
+| `--grid_size` | 2d: `101`, 3d/4d: `41`, 6d: `21` | Grid points per dimension (4d: of x, y and θ) |
+| `--grid_size_v` | 4d only: `21` | Grid points of v |
 | `--combine` | 2d: `intersection`, 3d/4d/6d: `union` | `union` (V = min(V1, V2)) or `intersection` (V = max(V1, V2)); does not set the control mode |
 | `--dynamics`, `--dynamics_params` | the case's system, `{}` | Dynamics name from [dynamics/__init__.py](dynamics/__init__.py) and its parameters as JSON, including `uMode` (`max` by default, `min` to reach) |
-| `--t_step` | 2d: `0.02`, 3d: `0.04`, 4d/6d: `0.01` | Time step, at most HJSolver's CFL bound (the scripts stop with an error otherwise) |
-| `--lookback_length` | 2d: `0.2`, 3d/4d: `1.0`, 6d: `0.1` | Look-back length, `lookback_length / t_step` time steps |
+| `--t_step` | 2d: `0.02`, 3d: `0.04`, 4d: `0.02`, 6d: `0.01` | Time step, at most HJSolver's CFL bound (the scripts stop with an error otherwise) |
+| `--lookback_length` | 2d: `0.2`, 3d: `1.0`, 4d: `0.5`, 6d: `0.1` | Look-back length, `lookback_length / t_step` time steps |
 | `--results_dir` | `results` | Output folder |
 
 3d and 4d only: `--accuracy` (HJSolver accuracy, default `low`, which matches the local updates) and `--plot` (also save an interactive plot to `plots/`).

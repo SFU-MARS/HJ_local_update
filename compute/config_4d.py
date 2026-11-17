@@ -11,11 +11,20 @@ GRID_MIN_4D = np.array([-4.0, -4.0, 0.0, -math.pi])
 GRID_MAX_4D = np.array([4.0, 4.0, 2.0, math.pi])
 
 
-def grid_4d(num):
+def grid_4d(num, num_v=None):
     '''
-        4D grid with num points per dimension, theta (dimension 3) is periodic.
+        4D grid with num points in x, y and theta and num_v points in v (default num), theta (dimension 3)
+        is periodic.
     '''
-    return Grid(GRID_MIN_4D, GRID_MAX_4D, 4, np.array([num] * 4), [3])
+    num_v = num if num_v is None else num_v
+    return Grid(GRID_MIN_4D, GRID_MAX_4D, 4, np.array([num, num, num_v, num]), [3])
+
+
+def grid_4d_from_shape(shape):
+    '''
+        4D grid for files of shape (x, y, v, theta), used by the local updates.
+    '''
+    return grid_4d(shape[0], shape[2])
 
 
 def result_files_4d(combine, results_dir="results"):
@@ -37,9 +46,10 @@ def result_files_4d(combine, results_dir="results"):
 CASE_4D = {
     "dim": 4,
     "grid": grid_4d,
+    "grid_from_shape": grid_4d_from_shape,
     "axes": "(x, y, v, theta)",
     "dynamics": "dubins_4d",
     "combine": "union",
-    "t_step": 0.01,
+    "t_step": 0.02,
     "grow_within_step": False,
 }

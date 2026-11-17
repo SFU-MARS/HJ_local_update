@@ -1,7 +1,8 @@
 # Arguments and setup shared by every local update script (numpy_impl/ and hcl_impl/ local_update_<dim>.py).
 # Each case gives its settings as a dict (CASE_2D, CASE_3D, CASE_6D in compute/config_<dim>.py):
 #   dim, grid (function of the grid size), axes (for the help text), and the defaults of dynamics, combine,
-#   t_step and grow_within_step.
+#   t_step and grow_within_step. Optional: grid_from_shape (function of the file's grid shape), for cases with
+#   a different number of points per dimension (4d: fewer points in v).
 import os
 import time
 
@@ -114,8 +115,10 @@ def setup_local_update(parser, case, hcl=False):
 
     # Grid with the grid size read from the decomposition file
     num = grid_shape[0]
-    grid = case["grid"](num)
-    print(f"Grid size: {num}^{dim}, time steps: {num_steps - 1}, combine: {args.combine}, "
+    # Cases with a different number of points per dimension build the grid from the whole shape
+    grid = case["grid_from_shape"](grid_shape) if "grid_from_shape" in case else case["grid"](num)
+    size = f"{num}^{dim}" if len(set(grid_shape)) == 1 else " x ".join(str(n) for n in grid_shape)
+    print(f"Grid size: {size}, time steps: {num_steps - 1}, combine: {args.combine}, "
           f"grow_within_step: {args.grow_within_step}")
 
     # Initial leaking set from the subsystem initial values (--init_1, --init_2)
