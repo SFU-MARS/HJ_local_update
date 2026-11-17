@@ -52,7 +52,7 @@ For intersection (reach), use `--combine intersection --dynamics_params '{"uMode
 | 201² | union | 0.02 / 0.2 (10) | 10473 / 0 / 0 | 0.33 / 4.8e-7 / 4.8e-7 | 0.025 s | 0.016 s | 1.5 s / 0.0060 s |
 | 201² | intersection | 0.02 / 0.2 (10) | 7277 / 0 / 0 | 0.085 / 4.8e-7 / 4.8e-7 | 0.025 s | 0.016 s | 0.91 s / 0.0033 s |
 
-All points are within 5e-7 of the direct computation (32-bit rounding), and numpy and HeteroCL update the same points, within 2.4e-7 of each other. 2d grows the region within each step (`grow_within_step`), in the HeteroCL kernel too.
+
 
 ### Example: 3D Dubins Car
 
@@ -76,7 +76,6 @@ For intersection (reach), use `--combine intersection --dynamics_params '{"uMode
 | 41³ | union | 0.04 / 1.0 (25) | 55224 / 6 / 30 | 2.5 / 1.4e-6 / 2.4e-6 | 0.047 s | 0.051 s | 20.9 s / 0.0048 s |
 | 41³ | intersection | 0.04 / 1.0 (25) | 54902 / 2 / 18 | 0.69 / 1.4e-6 / 2.1e-6 | 0.046 s | 0.051 s | 20.9 s / 0.0048 s |
 
-The remaining points are 32-bit rounding that builds up over the 25 time steps: every point is within 2.4e-6 of the direct computation. numpy matches HJSolver exactly after the first step, HeteroCL within one rounding step (6e-8), since its kernel adds up the same terms in a different order.
 
 ### Example: 4D Dubins Car
 
