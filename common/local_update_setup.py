@@ -127,7 +127,7 @@ def setup_local_update(parser, case, hcl=False):
           f"grow_within_step: {args.grow_within_step}")
 
     # Initial leaking set from the subsystem initial values (--init_1, --init_2)
-    leaking = get_leaking_set(data_init_upper, data_init_lower, decomp, grid, args.leaking_mode)
+    leaking = get_leaking_set([data_init_upper, data_init_lower], decomp, grid, args.leaking_mode)
     return args, sys, grid, leaking
 
 

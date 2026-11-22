@@ -23,21 +23,25 @@ def dilate(mask, grid):
     return out
 
 
-def get_leaking_set(data_init_upper, data_init_lower, result_decomp, grid, mode="smallest"):
+def get_leaking_set(initial_values, result_decomp, grid, mode="smallest"):
     '''
-        Initial leaking set: points where the decomposition min(V1, V2) can be wrong.
-            mode="smallest" (default): the switching surface V1 = V2 plus its neighbours,
-                dilate(|V1 - V2| < 1e-9). Smallest set that gives the full correction, no tuning.
-            mode="delta": |V1 - V2| < delta, with delta = max|initial value - final
-                decomposition result| (new_theory_L below). Conservative, larger set.
+        Initial leaking set: points where the combination min(V1, ..., VN) can be wrong, near the switching
+        surface, where the smallest and second-smallest initial values are equal. For N = 2: |V1 - V2|.
+            initial_values: list of the initial value functions (2 or more), each on the full grid
             result_decomp: decomposition result with time as the first axis (only used by mode="delta")
+            mode="smallest" (default): the switching surface (gap < 1e-9) plus its neighbours.
+                Smallest set that gives the full correction, no tuning.
+            mode="delta": gap < delta, with delta = max|initial value - final decomposition result|
+                (new_theory_L below). Conservative, larger set.
     '''
+    first, second = np.partition(np.stack(initial_values), 1, axis=0)[:2]
+    gap = second - first
     if mode == "smallest":
-        leaking = dilate(abs(data_init_upper - data_init_lower) < 1e-9, grid)
+        leaking = dilate(gap < 1e-9, grid)
     elif mode == "delta":
         delta = np.max(abs(result_decomp[0] - result_decomp[-1]))
         print('The delta value is', delta)
-        leaking = abs(data_init_upper - data_init_lower) < delta
+        leaking = gap < delta
     else:
         raise ValueError(f"unknown leaking mode: {mode}")
     print(f"The number of leaking corner points: {leaking.sum()} / {leaking.size}")
