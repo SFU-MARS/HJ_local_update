@@ -84,6 +84,16 @@ class dubins_car:
                 opt_w[0] = -opt_w
         return (opt_w[0], in3[0], in4[0])
 
+    def opt_dstb(self, t, state, spat_deriv):
+        '''
+        No disturbance (same as DubinsCar.opt_dstb in optimized_dp)
+        '''
+        d1 = hcl.scalar(0, "d1")
+        d2 = hcl.scalar(0, "d2")
+        # Just create and pass back, even though they're not used
+        d3 = hcl.scalar(0, "d3")
+        return (d1[0], d2[0], d3[0])
+
     def dynamics(self, t, state, uOpt, dOpt):
         '''
         HeteroCL version of dynamics_numpy (same as DubinsCar.dynamics in optimized_dp)
