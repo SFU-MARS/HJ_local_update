@@ -8,7 +8,7 @@ from common.hj_update import DTYPE, deriv_bounds_numpy, value_change_numpy
 from common.leaking import dilate
 
 
-def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e-6, grow_within_step=False):
+def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e-6, grow_within_step=False, brt=False):
     '''
         Local updating based on a saved decomposition result
             decomp_file: npy file of the decomposition result, time as the first axis (t, grid ...), index 0 is t = 0
@@ -18,6 +18,9 @@ def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e
             t_step: time step used to compute decomp_file
             threshold: a point counts as corrected if it differs from the decomposition by more than this
             grow_within_step: also grow the region within each time step, see below
+            brt: backward reachable tube instead of set: every updated value is also capped by the initial value
+                 (V = min(V, V(t = 0)) after the step, TargetSetMode "minVWithV0" of HJSolver); the decomposition
+                 result must then be the union of the obstacles' tubes
 
         At each time step, the points updated (one HJSolver step from the corrected previous step) are the
         leaking set plus every point (and its neighbours) whose value at the previous time step differs
@@ -60,6 +63,8 @@ def local_update_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e
             for index in np.argwhere(todo):
                 index = tuple(index)
                 new_data[index] = data[index] + value_change_numpy(data, index, grid, sys, t, t_step, state_values, *bounds)
+                if brt:
+                    new_data[index] = min(new_data[index], result_decomp[0][index])
             done |= todo
             if not grow_within_step:
                 break

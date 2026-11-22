@@ -64,7 +64,7 @@ class _StepOf:
         return self.V[(self.s,) + tuple(idx)]
 
 
-def build_local_update_kernel(sys, grid, num_steps, threshold):
+def build_local_update_kernel(sys, grid, num_steps, threshold, brt=False):
     '''
         Used by local_update_hcl_from_file. Returns the compiled HeteroCL kernel of one local update time step s,
         updating V (time as the first axis) in place: V[s-1] is the corrected value function of the previous step,
@@ -81,6 +81,8 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
                the same kernel call.
         Every update reads only V[s-1], so the order of the updates does not change the result: the same region
         and values as numpy_impl/growing_region.py.
+            brt: backward reachable tube instead of set: every updated value is also capped by the initial value
+                 V[0] (which the loop never overwrites), as TargetSetMode "minVWithV0" of HJSolver.
             mark_read, mark_write: region marks of this step (== s) and the next step (set to s + 1), LEAKING for the
                           leaking set; the host swaps them after each step, so a mark is never overwritten while it
                           is still read
@@ -154,6 +156,9 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
             new = hcl.scalar(0, "new", dtype=DTYPE_HCL)
             new[0] = V_prev[idx] + value_change_hcl(V_prev, list(idx), grid, sys, state, t_step[0],
                                                     deriv_min, deriv_max)
+            if brt:
+                with hcl.if_(V[(0,) + idx] < new[0]):
+                    new[0] = V[(0,) + idx]
             with hcl.if_(grow[0] == 1):
                 done[idx] = s
 
@@ -227,7 +232,7 @@ def build_local_update_kernel(sys, grid, num_steps, threshold):
 
 
 def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshold=1e-6, cache_dir="kernels",
-                               grow_within_step=False):
+                               grow_within_step=False, brt=False):
     '''
         Growing-region local update of a saved decomposition result, each time step runs in one HeteroCL kernel call.
             decomp_file: npy file of the decomposition result, time as the first axis (t, grid ...), index 0 is t = 0
@@ -239,6 +244,8 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshol
             cache_dir: directory of the compiled kernels (see hcl_impl/kernel_cache.py)
             grow_within_step: grow the region within each time step until no new point is updated
                               (see numpy_impl/growing_region.py)
+            brt: backward reachable tube instead of set (see build_local_update_kernel); the decomposition result
+                 must then be the union of the obstacles' tubes
         Returns the corrected value function, same shape as the decomposition result (time as the first axis; a
         numpy view of the HeteroCL array).
     '''
@@ -250,10 +257,10 @@ def local_update_hcl_from_file(decomp_file, leaking, grid, sys, t_step, threshol
     # Step 1: build (or load the cached) HeteroCL kernel
     hcl.init(DTYPE_HCL)
     total_start = time.time()
-    key = (tuple(grid.pts_each_dim), tuple(grid.min), tuple(grid.max), tuple(grid.pDim), num_steps, threshold,
+    key = (tuple(grid.pts_each_dim), tuple(grid.min), tuple(grid.max), tuple(grid.pDim), num_steps, threshold, brt,
            type(sys).__name__, sorted(vars(sys).items()), inspect.getsource(type(sys)), inspect.getsource(_StepOf),
            inspect.getsource(build_local_update_kernel), inspect.getsource(spatial_deriv), inspect.getsource(hj_update))
-    kernel, how = load_or_build_kernel(lambda: build_local_update_kernel(sys, grid, num_steps, threshold),
+    kernel, how = load_or_build_kernel(lambda: build_local_update_kernel(sys, grid, num_steps, threshold, brt),
                                        key, f"local_update_{dims}d", cache_dir)
     print(f"HeteroCL kernel {how} in {time.time() - total_start:.4f} seconds")
 

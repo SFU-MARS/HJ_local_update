@@ -35,11 +35,13 @@ import numpy as np
 from odp.solver import HJSolver
 
 
-def solve_hj(sys, grid, data, tau, accuracy="low"):
+def solve_hj(sys, grid, data, tau, accuracy="low", target_set_mode="None"):
     '''
         Solve the HJ PDE of sys on grid from the initial value data over the times tau with HJSolver
         (TargetSetMode "None", saving every time step).
             accuracy: "low" (1st order ENO + forward Euler) matches the local updates
+            target_set_mode: "None" (default) gives the backward reachable set; "minVWithV0" the tube, for the
+                             local updates with brt=True
         Returns the value function with time as the last axis, index 0 is t = 0, as 32-bit floats
         (HJSolver computes in 32-bit floats, so the conversion is exact).
 
@@ -49,7 +51,7 @@ def solve_hj(sys, grid, data, tau, accuracy="low"):
     '''
     out = io.StringIO()
     with contextlib.redirect_stdout(out):
-        result = HJSolver(sys, grid, data, tau, {"TargetSetMode": "None"},
+        result = HJSolver(sys, grid, data, tau, {"TargetSetMode": target_set_mode},
                           saveAllTimeSteps=True, accuracy=accuracy)
     log = out.getvalue().splitlines()
     steps = sum(1 for line in log if line.startswith("Computational time to integrate"))
